@@ -1,0 +1,13 @@
+a,b
+shoulder_l,shoulder_r
+shoulder_l,elbow_l
+elbow_l,wrist_l
+shoulder_r,elbow_r
+elbow_r,wrist_r
+hip_l,hip_r
+hip_l,knee_l
+knee_l,ankle_l
+hip_r,knee_r
+knee_r,ankle_r
+shoulder_l,hip_l
+shoulder_r,hip_r

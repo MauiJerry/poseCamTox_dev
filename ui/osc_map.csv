@@ -1,0 +1,8 @@
+address,param
+/show/efx/select,Activeeffect
+/show/fader,Fader
+/show/person/id,Personid
+/show/mask,Mask
+/show/blackout,Blackout
+/show/posecam/start,Start
+/show/posecam/stop,Stop

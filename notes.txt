@@ -1,0 +1,17 @@
+notes on PoseCamTox development
+jerry isdale, starting here 19 August 2025
+
+This folder is a refactoring of the Pose2Art touchDesigner projects of 2023 etc
+It is sibling of the new poseCamPC project/git - the app that reads webcam/file
+sending osc and ndi skeleton date
+
+Starting with a basic folder structure and scripts/docs generated with help of ChatGPT
+(or maybe me helping it)
+
+for reference the osc_trackhands.toe from 2023 is here. It works when poseCamPC is in osc legacy mode.
+
+at this point, the poseCam_Dev.toe is a blank TD project.
+first step will be to get it all into git. ... maybe github.
+then wire up the scripts per docs/WIRING.md
+---
+
