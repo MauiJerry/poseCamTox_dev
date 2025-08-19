@@ -15,3 +15,5 @@ first step will be to get it all into git. ... maybe github.
 then wire up the scripts per docs/WIRING.md
 ---
 
+using a flat structure but in initial commit there is a td folder with contents
+likely this wll be removed shortly.
