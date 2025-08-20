@@ -29,3 +29,5 @@ trying to keep the WIRING.md up to date with details.
 using ChatGPT to answer questions as i go thru, it does a fair job. 
 Lots of my queestions though are because the initial diretions were unclear when faced 
 with reality of the TouchDeisgner UI.
+
+variety of changes to the pose_fantout.py to properly load landmarks etc

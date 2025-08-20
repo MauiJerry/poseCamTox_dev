@@ -2,73 +2,70 @@
 """
 pose_fanout.py (DAT-based, Bundle-only)
 ---------------------------------------
+aug 20 12:58
 TouchDesigner Script CHOP that parses PoseCamPC **Bundle-mode** OSC rows from an
-OSC In DAT and fans them out into CHOP channels.
+OSC In DAT (poseoscIn1) and fans them out into CHOP channels.
 
-# -*- coding: utf-8 -*-
-"""
-pose_fanout.py (DAT-based, Bundle-only)
----------------------------------------
-TouchDesigner Script CHOP that parses PoseCamPC **Bundle-mode** OSC rows from an
-OSC In DAT and fans them out into CHOP channels.
-
-Recognized incoming OSC messages (each as its own DAT row when "Split Bundles" = ON):
-
-  Metadata (some may be sent periodically):
+Recognized incoming OSC messages:
+  Metadata:
     /pose/frame_count       <int>
     /pose/num_persons       <int>
     /pose/image_width       <int>
     /pose/image_height      <int>
-    /pose/timestamp         <float seconds since epoch>          <-- NEW
-    /pose/timestamp_str     <string "YYYY.MM.DD.HH.MM.SS.ms">    <-- NEW
+    /pose/timestamp         <float seconds since epoch>
+    /pose/timestamp_str     <string "YYYY.MM.DD.HH.MM.SS.ms">
 
-  Landmarks (one per landmark in the frame):
+  Landmarks:
     /pose/p{pid}/{lid}      <float x> <float y> <float z>
-    (also supported) /pose/p{pid}/{name}
-    (also supported) /p{pid}/{lid|name}   # short form accepted
+    /pose/p{pid}/{name}
+    /p{pid}/{lid|name}      (short form accepted)
 
 Outputs (CHOP channels):
   - p{pid}_{name}_x, p{pid}_{name}_y, p{pid}_{name}_z
   - p{pid}_present
-  - pose_n_people                     (from /pose/num_persons, fallback=len(present))
-  - pose_frame_count                  (if present)
-  - pose_img_w, pose_img_h            (if present)
-  - pose_ts_sec, pose_ts_ms           (if /pose/timestamp present)         <-- NEW
+  - pose_n_people
+  - pose_frame_count
+  - pose_img_w, pose_img_h
+  - pose_ts_sec, pose_ts_ms
 
 String mirroring:
   - If a Text DAT named 'pose_ts_str' exists, /pose/timestamp_str is written there.
 
-Landmark name lookup:
-  - From a Table DAT (CSV) named 'landmark_map' with 2 columns: id, name
-  - Header row optional (id,name). If missing, first row is treated as data.
-
 OSC In DAT requirements:
   - "Split Bundles into Messages" = ON
-  - "Clear on Frame" = ON (recommended)
+  - "Clear on Frame" = ON
 """
 
 import re
 import logging
 
-# ---------------- Configuration -------------------------------------------------
-OSC_IN_DAT_NAME   = 'poseoscIn1'   # OSC In DAT name (relative to this COMP)
-ID_MAP_DAT_NAME   = 'landmark_map' # Table DAT (2 cols: id, name)
-TS_STR_DAT_NAME   = 'pose_ts_str'  # Optional Text DAT to mirror /pose/timestamp_str
+OSC_IN_DAT_NAME      = 'poseoscIn1'
+ID_MAP_DAT_NAME      = 'landmark_map'
+TS_STR_DAT_NAME      = 'pose_ts_str'
 
-# Optional per-frame logging of the received rows
-LOG_BUNDLES = False                # set True to log each frame’s rows
-LOG_FILE    = 'pose_fanout.log'    # written to TD project folder
+LOG_BUNDLES          = False
+LOG_FILE             = 'pose_fanout.log'
+LOG_TEXT_DAT_NAME    = 'pose_log'
 
-# If a Text DAT named 'pose_log' exists beside this script, logs mirror there too
-LOG_TEXT_DAT_NAME = 'pose_log'
-# -------------------------------------------------------------------------------
-
-# Accept both numeric-id and name variants, with/without '/pose' prefix
 _RE_NUM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lid>\d+)$")
 _RE_NAM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lname>[A-Za-z0-9_]+)$")
 
-# ---------------- Utilities -----------------------------------------------------
+# --- TouchDesigner compatibility helpers (method vs property) ----------------
+def _get_val(attr):
+    """Return attr() if callable, else attr (for TD versions where numRows/numCols
+    are methods vs. properties)."""
+    try:
+        return attr() if callable(attr) else attr
+    except Exception:
+        return attr  # best-effort
 
+def _nrows(dat):
+    return _get_val(dat.numRows) if hasattr(dat, 'numRows') else 0
+
+def _ncols(dat):
+    return _get_val(dat.numCols) if hasattr(dat, 'numCols') else 0
+
+# --- OP/COMP helpers ---------------------------------------------------------
 def _here():
     return me.parent() if hasattr(me, 'parent') else None
 
@@ -76,47 +73,81 @@ def _op_lookup(name_or_path):
     comp = _here()
     if not name_or_path:
         return None
-    if name_or_path.startswith('/'):
+    if isinstance(name_or_path, str) and name_or_path.startswith('/'):
         return op(name_or_path)
     if comp:
         o = comp.op(name_or_path)
-        if o: return o
+        if o:
+            return o
     return op(name_or_path)
 
-def _col_idx_any(dat, names, default):
-    """Return index of the first existing named column; else default."""
-    for nm in names:
-        try:
-            c = dat.col(nm)
-            return c.index
-        except Exception:
-            pass
-    return default
+# --- Misc helpers ------------------------------------------------------------
+def _first_row_is_header(dat, addr_idx_guess=0):
+    """Detect if row 0 looks like a header (e.g., 'OSC address', 'address')."""
+    if _nrows(dat) < 1:
+        return False
+    try:
+        headers = []
+        for c in range(_ncols(dat)):
+            cell = dat[0, c]
+            v = getattr(cell, 'val', '') if cell is not None else ''
+            headers.append((v or '').strip().lower())
+        return any(h in ('osc address', 'address') for h in headers)
+    except Exception:
+        return False
 
 def _resolve_cols(dat):
     """
-    Tolerant column detection:
-      - Address: "OSC address" or "address" (fallback col 0)
-      - Args: start at 'arg0' or 'arg1' (fallback col 1)
+    Robust column resolver that does NOT rely on dat.col() always existing.
+    It scans the first row as a header to find 'OSC address'/'address' and 'arg0'/'arg1'.
+    If no header is present, it falls back to reasonable defaults:
+      [message, bundle-timestamp, OSC address, arg0, arg1, ...]
     """
-    addr = _col_idx_any(dat, ['OSC address', 'address', 'Address'], 0)
-    a0   = _col_idx_any(dat, ['arg0', 'arg1', 'Arg0', 'Arg1'], 1)
-    return {
-        'addr': addr,
-        'a1':   a0,
-        'a2':   a0 + 1,
-        'a3':   a0 + 2,
-        'a4':   a0 + 3,
-    }
+    ncols = _ncols(dat)
+    nrows = _nrows(dat)
 
-def _first_row_is_header(dat, addr_idx):
-    if dat.numRows < 1:
-        return False
-    try:
-        val = dat[0, addr_idx].val.strip().lower()
-        return val in ('osc address', 'address')
-    except Exception:
-        return False
+    addr_idx = 2 if ncols >= 3 else 0
+    a0_idx   = 3 if ncols >= 4 else 1
+
+    if nrows > 0 and ncols > 0:
+        headers = []
+        for c in range(ncols):
+            cell = dat[0, c]
+            v = getattr(cell, 'val', '') if cell is not None else ''
+            headers.append((v or '').strip().lower())
+
+        # find address column
+        for i, h in enumerate(headers):
+            if h in ('osc address', 'address'):
+                addr_idx = i
+                break
+
+        # find first arg column (arg0 preferred, else arg1)
+        arg_first = None
+        for i, h in enumerate(headers):
+            if h in ('arg0', 'arg 0'):
+                arg_first = i
+                break
+        if arg_first is None:
+            for i, h in enumerate(headers):
+                if h in ('arg1', 'arg 1'):
+                    arg_first = i
+                    break
+
+        if arg_first is not None:
+            a0_idx = arg_first
+        else:
+            # no explicit arg header; assume args start right after address
+            a0_idx = addr_idx + 1
+
+    # explicit integer indices (avoid method objects)
+    return {
+        'addr': int(addr_idx),
+        'a1':   int(a0_idx),
+        'a2':   int(a0_idx + 1),
+        'a3':   int(a0_idx + 2),
+        'a4':   int(a0_idx + 3),
+    }
 
 def _safe_float(cell):
     try:
@@ -128,10 +159,8 @@ def _safe_float(cell):
             return None
 
 def _cell_str(cell):
-    """Return string value from a DAT cell (no quoting), or ''."""
     try:
         s = cell.val
-        # Strip surrounding quotes if sender included them
         if len(s) >= 2 and ((s[0] == s[-1] == '"') or (s[0] == s[-1] == "'")):
             return s[1:-1]
         return s
@@ -139,20 +168,16 @@ def _cell_str(cell):
         return ''
 
 def _build_id_to_name_map():
-    """
-    Build {id:int -> name:str} from Table DAT ID_MAP_DAT_NAME.
-    Two columns expected: id, name. Header row optional.
-    """
     m = {}
     d = _op_lookup(ID_MAP_DAT_NAME)
-    if not d or d.numCols < 2:
+    if not d or _ncols(d) < 2:
         return m
-    first = d[0, 0].val.strip().lower()
+    first = (d[0, 0].val or '').strip().lower() if _nrows(d) > 0 else ''
     start = 1 if first in ('id', '#', 'index') else 0
-    for r in range(start, d.numRows):
+    for r in range(start, _nrows(d)):
         try:
             lid = int(float(d[r, 0].val))
-            name = d[r, 1].val.strip()
+            name = (d[r, 1].val or '').strip()
             if name:
                 m[lid] = name
         except Exception:
@@ -166,10 +191,10 @@ def _append_scalar(scriptOp, name, val):
 def _get_logger():
     log = logging.getLogger('pose_fanout')
     if not log.handlers:
-        handler = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
+        h = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
         fmt = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-        handler.setFormatter(fmt)
-        log.addHandler(handler)
+        h.setFormatter(fmt)
+        log.addHandler(h)
         log.setLevel(logging.DEBUG)
     return log
 
@@ -179,22 +204,15 @@ def _log_to_text_dat(lines):
         td_log.text = '\n'.join(lines)
 
 def _set_text_dat(name, text):
-    td_dat = _op_lookup(name)
-    if td_dat and hasattr(td_dat, 'text'):
-        td_dat.text = text
+    td = _op_lookup(name)
+    if td and hasattr(td, 'text'):
+        td.text = text
 
-# ---------------- TouchDesigner Callback ---------------------------------------
-
+# --- Main --------------------------------------------------------------------
 def onCook(scriptOp):
-    """
-    Main fan-out: read OSC rows from the OSC In DAT and publish channels.
-    Also mirrors the human-readable timestamp string (if present) into a
-    Text DAT named TS_STR_DAT_NAME.
-    """
     scriptOp.clear()
-
     osc_dat = _op_lookup(OSC_IN_DAT_NAME)
-    if not osc_dat or osc_dat.numRows <= 0:
+    if not osc_dat or _nrows(osc_dat) <= 0:
         _append_scalar(scriptOp, 'pose_n_people', 0.0)
         return
 
@@ -203,71 +221,69 @@ def onCook(scriptOp):
 
     id_map = _build_id_to_name_map()
 
-    latest = {}        # (pid, lname) -> (x,y,z)
+    latest = {}
     present = set()
+
     frame_count = None
     num_persons = None
     img_w = None
     img_h = None
-    ts_sec = None          # <-- NEW
-    ts_str = None          # <-- NEW
+    ts_sec = None
+    ts_str = None
 
-    # Optional logging: capture a readable snapshot of this frame’s rows
     if LOG_BUNDLES:
         logger = _get_logger()
-        snap_lines = ['--- pose_fanout frame ---']
+        snap = ['--- pose_fanout frame ---']
 
-    for r in range(start_row, osc_dat.numRows):
-        addr_cell = osc_dat[r, COL['addr']]
-        addr = addr_cell.val if addr_cell is not None else ''
+    nrows = _nrows(osc_dat)
+    ncols = _ncols(osc_dat)
+
+    for r in range(start_row, nrows):
+        # address
+        addr_cell = osc_dat[r, COL['addr']] if COL['addr'] < ncols else None
+        addr = getattr(addr_cell, 'val', '') if addr_cell is not None else ''
         if not addr:
             continue
 
-        a1 = osc_dat[r, COL['a1']] if COL['a1'] < osc_dat.numCols else None
-        a2 = osc_dat[r, COL['a2']] if COL['a2'] < osc_dat.numCols else None
-        a3 = osc_dat[r, COL['a3']] if COL['a3'] < osc_dat.numCols else None
+        # args (guard each index)
+        a1 = osc_dat[r, COL['a1']] if COL['a1'] < ncols else None
+        a2 = osc_dat[r, COL['a2']] if COL['a2'] < ncols else None
+        a3 = osc_dat[r, COL['a3']] if COL['a3'] < ncols else None
+        a4 = osc_dat[r, COL['a4']] if COL['a4'] < ncols else None
 
         if LOG_BUNDLES:
-            args_preview = []
-            for cidx in (COL['a1'], COL['a2'], COL['a3'], COL['a4']):
-                if cidx < osc_dat.numCols:
-                    v = osc_dat[r, cidx].val
-                    if v != '':
-                        args_preview.append(v)
-            line = f"{addr}  {' '.join(args_preview)}"
+            arg_vals = []
+            for c in (COL['a1'], COL['a2'], COL['a3'], COL['a4']):
+                if c < ncols:
+                    v = osc_dat[r, c]
+                    vv = getattr(v, 'val', '') if v is not None else ''
+                    if vv != '':
+                        arg_vals.append(vv)
+            line = f"{addr}  {' '.join(arg_vals)}"
             logger.debug(line)
-            snap_lines.append(line)
+            snap.append(line)
 
-        # ---- Metadata ----
+        # -- metadata
         if addr == '/pose/frame_count':
-            v = _safe_float(a1);  frame_count = int(v) if v is not None else frame_count
-            continue
+            v = _safe_float(a1); frame_count = int(v) if v is not None else frame_count; continue
         if addr == '/pose/num_persons':
-            v = _safe_float(a1);  num_persons = int(v) if v is not None else num_persons
-            continue
+            v = _safe_float(a1); num_persons = int(v) if v is not None else num_persons; continue
         if addr == '/pose/image_width':
-            v = _safe_float(a1);  img_w = int(v) if v is not None else img_w
-            continue
+            v = _safe_float(a1); img_w = int(v) if v is not None else img_w; continue
         if addr == '/pose/image_height':
-            v = _safe_float(a1);  img_h = int(v) if v is not None else img_h
-            continue
-        if addr == '/pose/timestamp':                 # <-- NEW numeric timestamp
-            v = _safe_float(a1)
-            if v is not None:
-                ts_sec = float(v)
-            continue
-        if addr == '/pose/timestamp_str':             # <-- NEW string timestamp
-            ts_str = _cell_str(a1)
-            continue
+            v = _safe_float(a1); img_h = int(v) if v is not None else img_h; continue
+        if addr == '/pose/timestamp':
+            v = _safe_float(a1); ts_sec = float(v) if v is not None else ts_sec; continue
+        if addr == '/pose/timestamp_str':
+            ts_str = _cell_str(a1); continue
 
-        # ---- Landmarks (numeric-id form) ----
+        # -- landmarks by numeric id
         m = _RE_NUM.match(addr)
         if m:
             try:
-                pid = int(m.group('pid'))
-                lid = int(m.group('lid'))
+                pid = int(m.group('pid')); lid = int(m.group('lid'))
                 x = _safe_float(a1); y = _safe_float(a2); z = _safe_float(a3)
-                if x is None or y is None or z is None:
+                if None in (x, y, z):
                     continue
                 lname = id_map.get(lid, f'id_{lid:02d}')
                 latest[(pid, lname)] = (x, y, z)
@@ -276,14 +292,13 @@ def onCook(scriptOp):
             except Exception:
                 pass
 
-        # ---- Landmarks (named form) ----
+        # -- landmarks by name
         m = _RE_NAM.match(addr)
         if m:
             try:
-                pid = int(m.group('pid'))
-                lname = m.group('lname')
+                pid = int(m.group('pid')); lname = m.group('lname')
                 x = _safe_float(a1); y = _safe_float(a2); z = _safe_float(a3)
-                if x is None or y is None or z is None:
+                if None in (x, y, z):
                     continue
                 latest[(pid, lname)] = (x, y, z)
                 present.add(pid)
@@ -291,316 +306,33 @@ def onCook(scriptOp):
             except Exception:
                 pass
 
-        # Everything else ignored (incl. legacy)
-
-    # ---- Emit channels ----
-    # Per-landmark components (sorted for stable ordering)
+    # output landmark channels
     for (pid, lname), (x, y, z) in sorted(latest.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         _append_scalar(scriptOp, f'p{pid}_{lname}_x', x)
         _append_scalar(scriptOp, f'p{pid}_{lname}_y', y)
         _append_scalar(scriptOp, f'p{pid}_{lname}_z', z)
 
-    # Presence and counts
+    # presence flags
     for pid in sorted(present):
         _append_scalar(scriptOp, f'p{pid}_present', 1.0)
 
+    # counts & metadata
     if num_persons is None:
         num_persons = len(present)
     _append_scalar(scriptOp, 'pose_n_people', float(num_persons))
 
-    # Optional meta
-    if frame_count is not None: _append_scalar(scriptOp, 'pose_frame_count', float(frame_count))
-    if img_w is not None:       _append_scalar(scriptOp, 'pose_img_w', float(img_w))
-    if img_h is not None:       _append_scalar(scriptOp, 'pose_img_h', float(img_h))
-
-    # NEW: timestamps
+    if frame_count is not None:
+        _append_scalar(scriptOp, 'pose_frame_count', float(frame_count))
+    if img_w is not None:
+        _append_scalar(scriptOp, 'pose_img_w', float(img_w))
+    if img_h is not None:
+        _append_scalar(scriptOp, 'pose_img_h', float(img_h))
     if ts_sec is not None:
         _append_scalar(scriptOp, 'pose_ts_sec', ts_sec)
-        _append_scalar(scriptOp, 'pose_ts_ms',  ts_sec * 1000.0)
-
+        _append_scalar(scriptOp, 'pose_ts_ms', ts_sec * 1000.0)
     if ts_str:
-        _set_text_dat(TS_STR_DAT_NAME, ts_str)  # mirror into Text DAT if present
+        _set_text_dat(TS_STR_DAT_NAME, ts_str)
 
-    # Mirror log to a Text DAT if present
     if LOG_BUNDLES:
-        _log_to_text_dat(snap_lines)
-
-    return
- incoming OSC messages (each as its own DAT row when "Split Bundles" = ON):
-
-  Metadata (some may be sent periodically):
-    /pose/frame_count    <int>
-    /pose/num_persons    <int>
-    /pose/image_width    <int>
-    /pose/image_height   <int>
-
-  Landmarks (one per landmark in the frame):
-    /pose/p{pid}/{lid}   <float x> <float y> <float z>
-    (also supported) /pose/p{pid}/{name}
-    (also supported) /p{pid}/{lid|name}   # short form accepted
-
-Outputs (CHOP channels):
-  - p{pid}_{name}_x, p{pid}_{name}_y, p{pid}_{name}_z
-  - p{pid}_present
-  - pose_n_people   (from /pose/num_persons, fallback=len(present))
-  - pose_frame_count (if present)
-  - pose_img_w, pose_img_h (if present)
-
-Landmark name lookup:
-  - From a Table DAT (CSV) named 'landmark_map' with 2 columns: id, name
-  - Header row optional (id,name). If missing, first row is treated as data.
-
-OSC In DAT requirements:
-  - "Split Bundles into Messages" = ON
-  - "Clear on Frame" = ON (recommended)
-
-Author: Pose2Art
-"""
-
-import re
-import logging
-
-# ---------------- Configuration -------------------------------------------------
-OSC_IN_DAT_NAME = 'poseoscIn1'     # OSC In DAT name (relative to this COMP)
-ID_MAP_DAT_NAME = 'landmark_map'   # Table DAT (2 cols: id, name)
-
-# Optional per-frame logging of the received rows
-LOG_BUNDLES = False                # set True to log each frame’s rows
-LOG_FILE    = 'pose_fanout.log'    # written to TD project folder
-
-# If a Text DAT named 'pose_log' exists beside this script, logs mirror there too
-LOG_TEXT_DAT_NAME = 'pose_log'
-# -------------------------------------------------------------------------------
-
-# Accept both numeric-id and name variants, with/without '/pose' prefix
-_RE_NUM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lid>\d+)$")
-_RE_NAM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lname>[A-Za-z0-9_]+)$")
-
-# ---------------- Utilities -----------------------------------------------------
-
-def _here():
-    return me.parent() if hasattr(me, 'parent') else None
-
-def _op_lookup(name_or_path):
-    comp = _here()
-    if not name_or_path:
-        return None
-    if name_or_path.startswith('/'):
-        return op(name_or_path)
-    if comp:
-        o = comp.op(name_or_path)
-        if o: return o
-    return op(name_or_path)
-
-def _col_idx_any(dat, names, default):
-    """
-    Return index of the first existing named column; else default.
-    Handles oscinDAT and Table DAT.
-    """
-    for nm in names:
-        try:
-            c = dat.col(nm)
-            return c.index
-        except Exception:
-            pass
-    return default
-
-def _resolve_cols(dat):
-    """
-    Tolerant column detection:
-      - Address: "OSC address" or "address" (fallback col 0)
-      - Args: start at 'arg0' or 'arg1' (fallback col 1)
-    """
-    addr = _col_idx_any(dat, ['OSC address', 'address', 'Address'], 0)
-    a0   = _col_idx_any(dat, ['arg0', 'arg1', 'Arg0', 'Arg1'], 1)
-    return {
-        'addr': addr,
-        'a1':   a0,
-        'a2':   a0 + 1,
-        'a3':   a0 + 2,
-        'a4':   a0 + 3,
-    }
-
-def _first_row_is_header(dat, addr_idx):
-    if dat.numRows < 1:
-        return False
-    try:
-        val = dat[0, addr_idx].val.strip().lower()
-        return val in ('osc address', 'address')
-    except Exception:
-        return False
-
-def _safe_float(cell):
-    try:
-        return float(cell.val)
-    except Exception:
-        try:
-            return float(cell)
-        except Exception:
-            return None
-
-def _build_id_to_name_map():
-    """
-    Build {id:int -> name:str} from Table DAT ID_MAP_DAT_NAME.
-    Two columns expected: id, name. Header row optional.
-    """
-    m = {}
-    d = _op_lookup(ID_MAP_DAT_NAME)
-    if not d or d.numCols < 2:
-        return m
-    first = d[0, 0].val.strip().lower()
-    start = 1 if first in ('id', '#', 'index') else 0
-    for r in range(start, d.numRows):
-        try:
-            lid = int(float(d[r, 0].val))
-            name = d[r, 1].val.strip()
-            if name:
-                m[lid] = name
-        except Exception:
-            continue
-    return m
-
-def _append_scalar(scriptOp, name, val):
-    ch = scriptOp.appendChan(name)
-    ch[0] = float(val)
-
-def _get_logger():
-    log = logging.getLogger('pose_fanout')
-    if not log.handlers:
-        handler = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
-        fmt = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-        handler.setFormatter(fmt)
-        log.addHandler(handler)
-        log.setLevel(logging.DEBUG)
-    return log
-
-def _log_to_text_dat(lines):
-    td_log = _op_lookup(LOG_TEXT_DAT_NAME)
-    if td_log and hasattr(td_log, 'text'):
-        td_log.text = '\n'.join(lines)
-
-# ---------------- TouchDesigner Callback ---------------------------------------
-
-def onCook(scriptOp):
-    """
-    Main fan-out: read OSC rows from the OSC In DAT and publish channels.
-    """
-    scriptOp.clear()
-
-    osc_dat = _op_lookup(OSC_IN_DAT_NAME)
-    if not osc_dat or osc_dat.numRows <= 0:
-        _append_scalar(scriptOp, 'pose_n_people', 0.0)
-        return
-
-    COL = _resolve_cols(osc_dat)
-    start_row = 1 if _first_row_is_header(osc_dat, COL['addr']) else 0
-
-    id_map = _build_id_to_name_map()
-    # Optional reverse map (name->name) if named addresses arrive
-    # Not strictly needed; we will just use the provided name if already a string.
-    latest = {}        # (pid, lname) -> (x,y,z)
-    present = set()
-    frame_count = None
-    num_persons = None
-    img_w = None
-    img_h = None
-
-    # Optional logging: capture a readable snapshot of this frame’s rows
-    if LOG_BUNDLES:
-        logger = _get_logger()
-        snap_lines = ['--- pose_fanout frame ---']
-
-    for r in range(start_row, osc_dat.numRows):
-        addr_cell = osc_dat[r, COL['addr']]
-        addr = addr_cell.val if addr_cell is not None else ''
-        if not addr:
-            continue
-
-        a1 = osc_dat[r, COL['a1']] if COL['a1'] < osc_dat.numCols else None
-        a2 = osc_dat[r, COL['a2']] if COL['a2'] < osc_dat.numCols else None
-        a3 = osc_dat[r, COL['a3']] if COL['a3'] < osc_dat.numCols else None
-
-        if LOG_BUNDLES:
-            # Build a compact row dump: address and first few args
-            args_preview = []
-            for cidx in (COL['a1'], COL['a2'], COL['a3'], COL['a4']):
-                if cidx < osc_dat.numCols:
-                    val = osc_dat[r, cidx].val
-                    if val != '':
-                        args_preview.append(val)
-            line = f"{addr}  {' '.join(args_preview)}"
-            logger.debug(line)
-            snap_lines.append(line)
-
-        # ---- Metadata ----
-        if addr == '/pose/frame_count':
-            v = _safe_float(a1);  frame_count = int(v) if v is not None else frame_count
-            continue
-        if addr == '/pose/num_persons':
-            v = _safe_float(a1);  num_persons = int(v) if v is not None else num_persons
-            continue
-        if addr == '/pose/image_width':
-            v = _safe_float(a1);  img_w = int(v) if v is not None else img_w
-            continue
-        if addr == '/pose/image_height':
-            v = _safe_float(a1);  img_h = int(v) if v is not None else img_h
-            continue
-
-        # ---- Landmarks (numeric-id form) ----
-        m = _RE_NUM.match(addr)
-        if m:
-            try:
-                pid = int(m.group('pid'))
-                lid = int(m.group('lid'))
-                x = _safe_float(a1); y = _safe_float(a2); z = _safe_float(a3)
-                if x is None or y is None or z is None:
-                    continue
-                lname = id_map.get(lid, f'id_{lid:02d}')
-                latest[(pid, lname)] = (x, y, z)
-                present.add(pid)
-                continue
-            except Exception:
-                pass
-
-        # ---- Landmarks (named form) ----
-        m = _RE_NAM.match(addr)
-        if m:
-            try:
-                pid = int(m.group('pid'))
-                lname = m.group('lname')
-                x = _safe_float(a1); y = _safe_float(a2); z = _safe_float(a3)
-                if x is None or y is None or z is None:
-                    continue
-                latest[(pid, lname)] = (x, y, z)
-                present.add(pid)
-                continue
-            except Exception:
-                pass
-
-        # Everything else ignored (incl. legacy)
-
-    # ---- Emit channels ----
-    # Per-landmark components (sorted for stable ordering)
-    for (pid, lname), (x, y, z) in sorted(latest.items(), key=lambda kv: (kv[0][0], kv[0][1])):
-        _append_scalar(scriptOp, f'p{pid}_{lname}_x', x)
-        _append_scalar(scriptOp, f'p{pid}_{lname}_y', y)
-        _append_scalar(scriptOp, f'p{pid}_{lname}_z', z)
-
-    # Presence and counts
-    for pid in sorted(present):
-        _append_scalar(scriptOp, f'p{pid}_present', 1.0)
-
-    if num_persons is None:
-        num_persons = len(present)
-    _append_scalar(scriptOp, 'pose_n_people', float(num_persons))
-
-    # Optional meta
-    if frame_count is not None: _append_scalar(scriptOp, 'pose_frame_count', float(frame_count))
-    if img_w is not None:       _append_scalar(scriptOp, 'pose_img_w', float(img_w))
-    if img_h is not None:       _append_scalar(scriptOp, 'pose_img_h', float(img_h))
-
-    # Mirror log to a Text DAT if present
-    if LOG_BUNDLES:
-        _log_to_text_dat(snap_lines)
-
+        _log_to_text_dat(snap)
     return
