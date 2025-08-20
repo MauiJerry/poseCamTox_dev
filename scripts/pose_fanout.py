@@ -3,6 +3,8 @@
 # Requirements inside the PoseCam COMP:
 #   - OSC In DAT named: poseoscIn1
 #   - Table DAT named: landmark_map   (headers: id,name; File -> ./td/data/landmark_names.csv or ./td/config/landmark_names.csv)
+#
+#  somee issues with this version.  need to update
 
 def _resolve_landmark_map():
     """Return two dicts: id->name, name->id from the landmark_map Table DAT."""

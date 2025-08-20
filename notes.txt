@@ -17,3 +17,15 @@ then wire up the scripts per docs/WIRING.md
 
 using a flat structure but in initial commit there is a td folder with contents
 likely this wll be removed shortly.
+
+git init
+git add .
+git status (check what happened)
+git commit -m "initial commit"
+---
+initial startup operator training issues with the Toe creation. 
+trying to keep the WIRING.md up to date with details.
+
+using ChatGPT to answer questions as i go thru, it does a fair job. 
+Lots of my queestions though are because the initial diretions were unclear when faced 
+with reality of the TouchDeisgner UI.
