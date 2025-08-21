@@ -316,20 +316,20 @@ def onCook(scriptOp):
     for pid in sorted(present):
         _append_scalar(scriptOp, f'p{pid}_present', 1.0)
 
-    # counts & metadata
+    # counts & metadata  prefix with m_ so as not to muck with later wild card p* 
     if num_persons is None:
         num_persons = len(present)
-    _append_scalar(scriptOp, 'pose_n_people', float(num_persons))
+    _append_scalar(scriptOp, 'm_n_people', float(num_persons))
 
     if frame_count is not None:
-        _append_scalar(scriptOp, 'pose_frame_count', float(frame_count))
+        _append_scalar(scriptOp, 'm_frame_count', float(frame_count))
     if img_w is not None:
-        _append_scalar(scriptOp, 'pose_img_w', float(img_w))
+        _append_scalar(scriptOp, 'm_img_w', float(img_w))
     if img_h is not None:
-        _append_scalar(scriptOp, 'pose_img_h', float(img_h))
+        _append_scalar(scriptOp, 'm_img_h', float(img_h))
     if ts_sec is not None:
-        _append_scalar(scriptOp, 'pose_ts_sec', ts_sec)
-        _append_scalar(scriptOp, 'pose_ts_ms', ts_sec * 1000.0)
+        _append_scalar(scriptOp, 'm_ts_sec', ts_sec)
+        _append_scalar(scriptOp, 'm_ts_ms', ts_sec * 1000.0)
     if ts_str:
         _set_text_dat(TS_STR_DAT_NAME, ts_str)
 
