@@ -26,12 +26,14 @@ custom, Custom CSV,
 
 Then, when you add the **LandmarkFilter** (menu) parameter on **both** COMPs:
 
-- In **Customize Component…** set **Menu Source DAT** to this `landmarkfilter_csv` and:
+- In **Customize Component…** set **Menu Source DAT** to this `landmarkfiltermenu_csv` and:
   - **Menu Labels Column** = `label`
   - **Menu Names Column** = `key`
 - Add a **LandmarkFilterCSV** (File) parameter on both COMPs (used only when the selected key is `custom`).
 
 > Now both menus are driven from the same DAT, so items never drift.
+
+not sure how this connection works.  Maybe there is an update in the Ext py that reads the dat and fills in the menu?
 
 ------
 
@@ -99,7 +101,7 @@ class LandmarkSelectExt:
     def Rebuild(self):
         """
         Apply the selected filter:
-          1) Resolve key -> csv using 'landmarkfilter_csv' table.
+          1) Resolve key -> csv using 'landmarkfiltermenu_csv' table.
           2) Set 'landmark_mask.par.file' to that csv (or to LandmarkFilterCSV if key=='custom').
           3) Build channel list from either:
              - ALL: expand every 'name' in landmark_names to name_x/y/z
