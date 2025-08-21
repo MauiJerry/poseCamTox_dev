@@ -1,0 +1,7 @@
+key, label, csv
+all, All Landmarks,
+hands, Hands, data/masks_hands.csv
+basicpose, Basic Pose, data/masks_basicpose.csv
+skeleton, Skeleton, data/masks_skeleton.csv
+face, Face, data/masks_face.csv
+custom, Custom CSV,

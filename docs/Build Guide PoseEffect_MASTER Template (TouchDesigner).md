@@ -1,6 +1,12 @@
 # Build Guide: `PoseEffect_MASTER` Template (TouchDesigner)
 
-> This doc shows how to build a reusable **PoseEffect** template in-toe, wire it to a disk `.tox`, and clone it for concrete effects (Dots, Skeleton, HandEmitter, TexSkel). It uses **COMP `allowCooking`** (cook flag) to gate whole effects and **Cook Type: Selective** on heavy nodes inside each effect.
+guide created by Chat, last save 21Aug.
+
+This is part EfxSwitcher, a template that encapsulates an fxCore (custom network to do effect)
+
+> This doc shows how to build a reusable **PoseEffect** template in-toe, wire it to a disk `.tox`, and clone it for concrete effects (Dots, Skeleton, HandEmitter, TexSkel). 
+>
+> It uses **COMP `allowCooking`** (cook flag) to gate whole effects and **Cook Type: Selective** on heavy nodes inside each effect.  *(not sure what that means, seems Comp needs params for cooking toggle and type)*
 
 ------
 

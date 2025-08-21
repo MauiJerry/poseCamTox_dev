@@ -37,3 +37,11 @@ variety of changes to the pose_fantout.py to properly load landmarks etc
 realize the output of OnePerson Select CHOP would be the channels with p# stripped, and only have one person per the SelectPersonID
 This may simplify the PoseEfx and the Landmark Select, as they only need to look for the landmark name/id
 Perhaps the landmark channels should retain their base id in the name (eg 20_handtip_r = id_name)
+
+chat kinda works but gets details wrong or left output
+as building PoseEffect_MASTER COMP with internal LandmarkSelect COMP and fxCore etc
+often  Chat's guide du jour gets basic architecture right but details wrong/left out
+Such as details on how to add an Extension to a COMP
+i repeatedly asked chat to elaborate or redo its plan doc, 
+some of these are saved in ./docs/*.md
+

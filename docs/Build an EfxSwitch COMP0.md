@@ -1,8 +1,14 @@
-# Build and EfxSwith COMP
+# Build and EfxSwith COMP0
 
-this script has gotten out of date.
+this script has gotten out of date. but im working to keep it current in the 0 version
 
-The LandmarkSelect Comp needs its ext and param
+The LandmarkSelect Comp needs its ext and param see Build LandmarkSelect.md
+
+the Landmark Filter is exposed both on LandmarkSelect COMP and PoseEffect_Master Comp.  The contents of this menu should be a common Python or DAT that gives the Menu Display name, and the csv filename.  this will keep those two COMP in sync. the values should be bound together so a UI will effect both.  Odd nature of reusable, hierarchical Tox/Comp
+
+working a chat to get that updated
+
+---
 
 the ext are created using the rightClick Component Editor
 
@@ -21,26 +27,41 @@ Below is a concise, build‑once pattern you can use across the example app. It 
 - **Inputs**
   - `CHOP In` (required): one person’s channels from `personRouter` (e.g. `p1_*`).
   - `TOP In` (optional): camera/NDI or background feed to composite over.
+  
 - **Outputs**
   - `TOP Out` (required): the effect’s final image (aka the TOP stream the switch will choose).
   - `CHOP Out` (optional): any diagnostics (fps, counts) if you want.
+  
 - **Pars (on the COMP)**
+  
   - `Active` (pulse/Bool) – set by the switch; turn cooking on/off.
-  - `Bypass Inactive` (Bool, default On) – if inactive, auto‑bypass the heavy subnetwork.
+  
+  - `Bypass Inactive` (Switch,Bool, default On) – if inactive, auto‑bypass the heavy subnetwork.
+  
+    pass thru params/bound to values on my landmarkSelect op
+  
   - `LandmarkFilter` (Menu) – e.g. `All`, `Hands`, `Skeleton`, `Face`, `CustomCSV`.
-  - `FilterCSV` (Str) – path like `data/markSelect_hands.csv` (used when `CustomCSV`).
+  
+  - `LandmarkFilterCSV` (Str) – path like `data/markSelect_hands.csv` (used when `CustomCSV`).
 
 This mirrors the “switchable effects” pattern from the starter guide and keeps effect internals trivial .
 
 ## Internal nodes (inside each PoseEffect COMP)
 
 - `in1` (CHOP In), `in2` (TOP In)
+
 - `landmarkSelect` (a small COMP, see §3) → feeds only the channels the effect needs.
+
 - Your effect graph (TOPs/CHOPs/SOPs)
+
 - `out1` (TOP Out)
+
 - Optional `null_diag` (CHOP) for debug
-- **Selective cooking**: On the PoseEffect COMP, set **Cook Type = Selective**. The switch will flip `allowCooking` so only the chosen effect runs. (TD cooks only the selected input of a Switch TOP; we still hard‑gate via `allowCooking` for safety in complex networks.)
-- NOPE - this is wrong
+
+  **Selective cooking**: On the PoseEffect COMP, set **Cook Type = Selective**. The switch will flip `allowCooking` so only the chosen effect runs. (TD cooks only the selected input of a Switch TOP; we still hard‑gate via `allowCooking` for safety in complex networks.)
+
+  - NOPE - this is wrong
+
 
 ## Extension (PoseEffectExt) — minimal on/off + filter hookup
 
