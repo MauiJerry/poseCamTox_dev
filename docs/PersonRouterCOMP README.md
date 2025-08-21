@@ -4,6 +4,8 @@ PersonRouterCOMP README.md
 
 **Goal:** take incoming OSC pose streams (one or more people) and publish clean, routable CHOP/DAT outputs per person (plus a selected “Primary”) for downstream effects. It also normalizes names, tracks activity/timeout, and exposes simple show‑control parameters.
 
+Basically this is a stub until the PoseCamPC supports multiple person targets
+
 ------
 
 ### What it ingests / what it emits

@@ -1,0 +1,254 @@
+# /ext/LandmarkSelectExt.py
+# -----------------------------------------------------------------------------
+# LandmarkSelectExt
+# -----------------------------------------------------------------------------
+# High-level purpose
+# ------------------
+# This extension lives on the `landmarkSelect` COMP. It builds a list of CHOP
+# channel names (patterns) to feed into a Select CHOP based on user parameters:
+#   - Filtermode: All | Hands | BasicPose | Face | CustomCSV
+#   - Filtercsv:  Path to a user CSV (used only when Filtermode=CustomCSV)
+#
+# the script is referenced by a Text DAT called LandmarkSelectExt
+# and the COMP's Extension Object is op('./LandmarkSelectExt').module.LandmarkSelectExt(me)
+#
+# Supported CSV schemas in data/
+# ---------------------
+# - landmark_names.csv:       header has 'name' (case-insensitive)
+# - masks_*.csv / custom.csv: either 'name' (landmark names) or 'chan'
+#                              * 'name'  -> expanded to p{pid}_name_x/y/z
+#                              * 'chan'  -> used verbatim (wildcards allowed)
+#
+# Safety & ergonomics
+# -------------------
+# - Robust to missing files/columns (logs + no-throw)
+# - De-duplicates while preserving order
+# - Does not hard-crash if an operator is missing; logs and returns
+# - Centralized logging helper that writes to a sibling 'log' Text DAT if present
+#
+# Integration points
+# ------------------
+# - Call `ext.LandmarkSelectExt.Rebuild()` when Filtermode/Filtercsv/Personid
+#   changes, or from PoseEffectExt.ApplyFilter().
+# - Exposes small helpers for reading tables, expanding names, and logging.
+# -----------------------------------------------------------------------------
+
+
+class LandmarkSelectExt:
+    """Extension attached to the `landmarkSelect` COMP. See header for details."""
+
+    # ------------------------------
+    # Lifecycle / plumbing
+    # ------------------------------
+    def __init__(self, owner):
+        """
+        owner: the `landmarkSelect` COMP this extension is bound to.
+        """
+        self.owner = owner
+
+    # ------------------------------
+    # Public API
+    # ------------------------------
+    def Rebuild(self):
+        """
+        Recompute the Select CHOP's channel pattern based on parameters and CSVs.
+
+        Steps:
+          1) Resolve which mask CSV to use from Filtermode/Filtercsv.
+          2) Build a unified list of channel patterns (strings).
+             - If Filtermode=All: expand all names from `table_names`.
+             - Else: read `table_mask`; rows may be 'name' or 'chan'.
+          3) De-duplicate (preserve order) and write the space-separated list
+             into `select1.par.channame`.
+        """
+        par = self.owner.par
+        pid = _safe_int(par.Personid, 1)
+        mode = (par.Filtermode.eval() or '').strip().lower()
+
+        selectCHOP = self.owner.op('select1')
+        if not selectCHOP:
+            self._log("[Rebuild] Missing 'select1' Select CHOP.")
+            return
+
+        # Step 1: choose / set mask CSV on the Table DAT
+        tmask = self.owner.op('table_mask')
+        if not tmask:
+            self._log("[Rebuild] Missing 'table_mask' Table DAT.")
+            return
+
+        # Normalize mode to an enum
+        # Accepts: all, hands, basicpose, face, customcsv
+        csv_path = None
+        if mode == 'hands':
+            csv_path = 'data/masks_hands.csv'
+        elif mode == 'basicpose':
+            csv_path = 'data/masks_basicpose.csv'
+        elif mode == 'face':
+            # Optional: only use if you ship a face mask file
+            csv_path = 'data/masks_face.csv'
+        elif mode == 'customcsv':
+            csv_path = par.Filtercsv.eval().strip() if hasattr(par, 'Filtercsv') else ''
+            if not csv_path:
+                self._log("[Rebuild] Filtermode is CustomCSV but Filtercsv is empty.")
+        elif mode == 'all':
+            csv_path = ''  # handled specially below
+        else:
+            # Unknown mode: fall back to 'all'
+            self._log(f"[Rebuild] Unknown Filtermode '{mode}', defaulting to All.")
+            csv_path = ''
+
+        # Apply file path to `table_mask`
+        tmask.par.file = csv_path
+
+        # Step 2: build channel list
+        channels = []
+        if mode == 'all' or not mode:
+            # Expand *all* names from table_names
+            names = self._read_landmark_names()
+            if not names:
+                self._log("[Rebuild] No names found in 'table_names'; Select will be empty.")
+            for nm in names:
+                channels += self._expand_name_to_chans(nm, pid)
+        else:
+            # Expand from mask rows (either 'chan' or 'name')
+            items = self._read_mask_items()
+            if not items:
+                self._log(f"[Rebuild] No rows read from mask '{csv_path}'.")
+            for kind, val in items:
+                if kind == 'chan':
+                    # Use verbatim string; wildcards are allowed by Select CHOP
+                    channels.append(val)
+                else:  # 'name'
+                    channels += self._expand_name_to_chans(val, pid)
+
+        # Step 3: de-dup while preserving order
+        final = _dedup_preserve_order(channels)
+
+        # Write pattern into Select CHOP
+        selectCHOP.par.op = '../in1'  # ensure it targets upstream CHOP In
+        selectCHOP.par.channame = ' '.join(final)
+
+        self._log(f"[Rebuild] Built {len(final)} channel patterns "
+                  f"(mode='{mode}', person={pid}).")
+
+    # ------------------------------
+    # Helpers (table reads / transforms)
+    # ------------------------------
+    def _read_landmark_names(self):
+        """
+        Read `landmark_names` and return a list of landmark names (strings).
+        Accepts any header casing; expects a 'name' column.
+        """
+        tnames = self.owner.op('landmark_names')
+        if not tnames:
+            self._log("[_read_landmark_names] Missing 'landmark_names' Table DAT.")
+            return []
+        rows = _rows_dicts(tnames)
+        names = []
+        for row in rows:
+            nm = (row.get('name') or row.get('landmark') or '').strip()
+            if nm:
+                names.append(nm)
+        if not names:
+            self._log("[_read_landmark_names] No 'name' values found.")
+        return names
+
+    def _read_mask_items(self):
+        """
+        Read `table_mask` and return a list of tuples:
+          - ('chan', <pattern or full channel>)
+          - ('name', <landmark name>)
+        Either column may be present; both can be mixed per-row. Case-insensitive.
+        """
+        tmask = self.owner.op('table_mask')
+        if not tmask:
+            self._log("[_read_mask_items] Missing 'table_mask' Table DAT.")
+            return []
+        rows = _rows_dicts(tmask)
+        items = []
+        for row in rows:
+            ch = (row.get('chan') or '').strip()
+            nm = (row.get('name') or '').strip()
+            if ch:
+                items.append(('chan', ch))
+            elif nm:
+                items.append(('name', nm))
+        return items
+
+    def _expand_name_to_chans(self, name, pid):
+        """
+        Given a landmark name and person id, produce TouchDesigner CHOP channel
+        names for axes x/y/z (z is included for forward compatibility).
+        Example: name='wrist_l', pid=1 -> ['p1_wrist_l_x', 'p1_wrist_l_y', 'p1_wrist_l_z']
+        """
+        base = f"p{pid}_{name}_"
+        # Even if you don't currently publish _z, including it here is harmless:
+        # the Select CHOP will simply ignore non-existent channels.
+        return [base + 'x', base + 'y', base + 'z']
+
+    # ------------------------------
+    # Logging
+    # ------------------------------
+    def _log(self, msg):
+        """
+        Write to a sibling 'log' Text DAT if present, else print to TD textport.
+        """
+        logdat = self.owner.op('log')
+        try:
+            if logdat and hasattr(logdat, 'write'):
+                logdat.write(str(msg) + '\n')
+            else:
+                print(str(msg))
+        except Exception:
+            # Avoid throwing from logging
+            pass
+
+
+# -----------------------------------------------------------------------------
+# Module-level utilities (no TD state needed)
+# -----------------------------------------------------------------------------
+def _rows_dicts(tab):
+    """
+    Convert a Table DAT to a list of dicts using row 0 as header (case-insensitive).
+    Returns [] if fewer than 2 rows or no columns.
+    """
+    try:
+        if tab.numRows <= 1 or tab.numCols <= 0:
+            return []
+        headers = [c.val.lower() for c in tab.row(0)]
+        out = []
+        for r in tab.rows()[1:]:
+            d = {}
+            # min() prevents index errors if rows are ragged
+            for i in range(min(len(headers), len(r))):
+                d[headers[i]] = r[i].val
+            out.append(d)
+        return out
+    except Exception:
+        return []
+
+
+def _dedup_preserve_order(seq):
+    """
+    De-duplicate while preserving input order.
+    """
+    seen = set()
+    out = []
+    for item in seq:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _safe_int(par, default):
+    """
+    Safely coerce a parameter to int; returns `default` on failure.
+    """
+    try:
+        return int(par)
+    except Exception:
+        try:
+            return int(par.eval())
+        except Exception:
+            return int(default)

@@ -31,3 +31,9 @@ Lots of my queestions though are because the initial diretions were unclear when
 with reality of the TouchDeisgner UI.
 
 variety of changes to the pose_fantout.py to properly load landmarks etc
+
+---
+20 aug working thru tox 
+realize the output of OnePerson Select CHOP would be the channels with p# stripped, and only have one person per the SelectPersonID
+This may simplify the PoseEfx and the Landmark Select, as they only need to look for the landmark name/id
+Perhaps the landmark channels should retain their base id in the name (eg 20_handtip_r = id_name)
