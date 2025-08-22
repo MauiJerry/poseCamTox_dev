@@ -1,88 +1,94 @@
-# PoseEfxSwitch Architecture Rev 21Aug (b)
+# PoseEfxSwitch Architecture Rev 21Aug (c)
 
-love it — putting the menu in **PoseEfxSwitch** makes the whole thing cleaner and truly reusable.
+this arch/guide to building the PoseEfxSwitch component keeps getting revised as I work thru implementing it.  Older versions (in docs/*.md) or in the git history are for background. This one I'll keep for today.
 
-Below is a compact architecture + the exact code you need so you can wire the switch once, drop in a few effects, and demo.
-
-Yeah but it was unclear how this grows from the PoseEffectMaster to multiple PoseEffect_??? 
-
-so ask for clarification, and revise a few prompts
-
-after (b) post I realize, perhaps the EfxSwitch will need a UI with menu to select which of the Effects will be active.  Lets make this a custom thing after we build up working stuff and then build the showControl UX
+after (b) post I realize, perhaps the EfxSwitch will need a UI with menu to select which of the Effects will be active.  Lets make this a custom thing after we build up working stuff and then build the showControl UX  thus (c)
 
 ------
 
-# PoseEfxSwitch — Architecture & Build Guide (Option A, ship-it edition)
+# PoseEfxSwitch — Architecture & Build Guide (Option A, UI + Red Fallback)
 
-This doc walks you from a blank network to a working **PoseEfxSwitch** with:
-
-- one reusable **PoseEffect_Master** template,
-- a child **LandmarkSelect** selector,
-- and a first concrete effect **PoseEffect_Dots** (clone of Master).
-
-You can then clone more (StickMan, HandEmitters, TexturedMutant) and fill in their `fxCore` networks.
-
-> Design notes:
->
-> - **Filters (LandmarkFilter / Landmarkfiltercsv) live per-effect**, not on the switch. Each PoseEffect can choose a different mask.
-> - A single menu table (`LandmarkFilterMenu_csv`) lives on the **PoseEfxSwitch** and feeds menu items to every PoseEffect.
-> - The **LandmarkSelect** inside each PoseEffect reads its parent PoseEffect’s parameters (simple expressions), so you only change the filter on the effect.
+This guide gets you from zero to a working **PoseEfxSwitch** with a user-friendly **ActiveEffect** menu, per-effect filter control, a **red fallback** when camera TOP isn’t present, and a clean path to grow new effects fast.
 
 ------
 
-## 0) Files & params you’ll use
+## Goals & conventions
 
-- `/data/landmark_names.csv` (column: `name`)
+- **Switch owns the UI** for choosing which effect is active (by name, not index).
+- **Filters are per-effect** (`LandmarkFilter`, `Landmarkfiltercsv`). The switch does **not** have those params.
+- **One menu table** for landmark filters lives in the **switch** and is stamped into each effect.
+- Each **PoseEffect** contains a child **LandmarkSelect** that builds the CHOP channel list.
+- **Master** effect is a clone source; concrete effects are clones with only `fxCore` marked **Clone Immune**.
+- **Master’s default output** passes the input TOP through; at the **switch** we also provide a **red fallback** if the camera TOP is missing (obvious “not wired yet” indicator).
+- **Channel names are unprefixed** (`wrist_l_x`, not `p*_wrist_l_x`).
 
-- `/data/masks_hands.csv`, `/data/masks_basicpose.csv`, … (columns: `name` or `chan`)
+Parameter names (case-sensitive):
 
-- `/data/skeleton_edges.csv` (columns: `a,b`) — for StickMan
-
-- A small CSV for the menu definition (you choose the path), e.g. `/config/LandmarkFilterMenu.csv` with header: `key,label,csv`
-
-  ```
-  key,label,csv
-  all,All,
-  hands,Hands,data/masks_hands.csv
-  basicpose,Basic Pose,data/masks_basicpose.csv
-  custom,Custom CSV,
-  ```
-
-another confg/EffectNames.csv might have key, lable, opName for the UI
-
-Custom parameter *Names* (case-sensitive):
-
-- `LandmarkFilter` (Menu)
+- `LandmarkFilter`  (Menu)
 - `Landmarkfiltercsv` (File)
 
 ------
 
-## 1) Build the PoseEfxSwitch component (parent/orchestrator)
+## 1) Build the PoseEfxSwitch (parent/orchestrator)
 
-**Create:** a `Base COMP` named `PoseEfxSwitch`.
+Create a `Base COMP` named **`PoseEfxSwitch`**.
 
-**Inside PoseEfxSwitch add:**
+### Inside `PoseEfxSwitch` add nodes
 
-- `LandmarkFilterMenu_csv` (Table DAT) → set **File** to your `/data/LandmarkFilterMenu.csv`
-- `inCHOP` (CHOP In) — person-routed, unprefixed channels
-- `inTOP`  (TOP In)  — camera/background (optional)
-- `effects` (Base COMP) — will hold all PoseEffect_* COMPs
-- `out_switch` (Switch TOP) → `outTOP` (TOP Out)
+- **Input nodes**
 
-**Add a single custom parameter on PoseEfxSwitch:**
+  - `inCHOP` — CHOP In from PoseCam/person router (unprefixed channels)
+  - `inTOP`  — TOP In from PoseCam (camera/NDI)
 
-- Page **SWITCH** → `ActiveIndex` (Int)
-- ui here will link name, lable, EffectOp, Index
+- **Red fallback (obvious when no camera)**
 
-**Attach an extension to PoseEfxSwitch:**
+  - `redConst` — Constant TOP (set RGBA to 1,0,0,1)
 
-- Component Editor… → **Extensions**
-- Class Name: `PoseEfxSwitchExt` → **Add**
-- Select the created Text DAT and set **File** to `ext/PoseEfxSwitchExt.py` (code below)
+  - `guardTOP` — Switch TOP
+     Inputs: `inTOP` (index 0) and `redConst` (index 1)
+     Set **Index (expression)** to:
 
-**Add an Execute DAT \*inside PoseEfxSwitch\* (encapsulated onStart):**
+    ```python
+    1 if (not op('inTOP').inputs or op('inTOP').width == 0) else 0
+    ```
 
-- Name it `exec_init`, click **Edit…** and paste:
+    Use `guardTOP` as the “safe camera feed” you send to each effect’s `in2`.
+
+- **Effects container & output**
+
+  - `effects` — Base COMP (will hold all PoseEffect_*)
+  - `out_switch` — Switch TOP (selects one effect’s output)
+  - `outTOP` — TOP Out (from `out_switch`)
+
+**Wiring overview**
+
+- `guardTOP` → (to each effect’s `in2`)
+- `inCHOP`  → (to each effect’s `in1`)
+- Each `PoseEffect_*/fxOut` → `out_switch` input (0…N)
+- `out_switch` → `outTOP`
+
+### Add UI parameters on the switch
+
+Customize Component… (page **SWITCH**):
+
+- `ActiveEffect` (Menu) — user-facing selection by name
+- `ActiveIndex`  (Int)  — internal, useful for debugging
+- `RebuildEffectsMenu` (Pulse) — optional “refresh” button
+
+### Add tables in the switch
+
+- `LandmarkFilterMenu_csv` — **Table DAT** → **File** = `data/LandmarkFilterMenu.csv`
+   Columns: `key,label,csv` (e.g., `all,All,` / `hands,Hands,data/masks_hands.csv` / …)
+- *(Optional)* `PoseEffectsMenu_csv` — **Table DAT** → **File** = `config/PoseEffectsMenu.csv`
+   Columns: `key,label,opName,index`
+   If present, this dictates the ActiveEffect menu; otherwise the switch **auto-discovers** child `PoseEffect_*` under `effects/`.
+
+### Add the switch extension and init
+
+- Component Editor → **Extensions**
+   Add Class **`PoseEfxSwitchExt`** and point its **File** to `ext/PoseEfxSwitchExt.py` (below).
+
+- Inside `PoseEfxSwitch`, add an **Execute DAT** named `exec_init`, click **Edit…**, paste:
 
   ```python
   def onStart():
@@ -90,54 +96,63 @@ Custom parameter *Names* (case-sensitive):
       return
   ```
 
-**(Optional) Add a Parameter Execute DAT on PoseEfxSwitch** (only for the switch index):
+- Add a **Parameter Execute DAT** (still inside `PoseEfxSwitch`) and paste:
 
-```python
-def onValueChange(par, prev):
-    if par.name == 'ActiveIndex':
-        op('.').ext.PoseEfxSwitchExt.SetActiveIndex(int(par.eval()))
-    return
-```
+  ```python
+  def onValueChange(par, prev):
+      if par.name == 'ActiveEffect':
+          op('.').ext.PoseEfxSwitchExt.OnActiveEffectChanged()
+      elif par.name == 'ActiveIndex':
+          op('.').ext.PoseEfxSwitchExt.OnActiveIndexChanged()
+      elif par.name == 'RebuildEffectsMenu':
+          op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
+      return
+  ```
 
 ### `ext/PoseEfxSwitchExt.py` (drop-in)
 
 ```python
 # ext/PoseEfxSwitchExt.py
-# Drives menu items to all PoseEffects, binds child selectors, and switches which effect cooks.
+# PoseEfxSwitch UI + orchestration:
+# - ActiveEffect menu from PoseEffectsMenu_csv (or auto-discover children).
+# - Keeps ActiveEffect (menu) and ActiveIndex (int) in sync.
+# - Activates exactly one PoseEffect_* (allowCooking/bypass, routes out_switch).
+# - Stamps LandmarkFilter menu items into each PoseEffect and its landmarkSelect.
+# - Ensures landmarkSelect params read their parent PoseEffect (expressions).
 
 class PoseEfxSwitchExt:
     def __init__(self, owner):
         self.owner = owner
 
-    # ---------- entry point from exec_init ----------
+    # ----- lifecycle entry (called by exec_init.onStart) -----
     def Initialize(self):
-        self.InitMenus()
-        self.EnsureBindings()
-        idx = int(self.owner.par.ActiveIndex.eval() if hasattr(self.owner.par, 'ActiveIndex') else 0)
-        self.SetActiveIndex(idx)
+        self.InitLandmarkMenus()
+        self.EnsureLandmarkBindings()
+        self.BuildEffectsMenu()
+        # Pick initial effect
+        key = (self.owner.par.ActiveEffect.eval() or '').strip()
+        keys = self._menuKeys()
+        if key in keys:
+            self.SetActiveEffect(key)
+        elif keys:
+            self.SetActiveEffect(keys[0])
+        else:
+            self.SetActiveIndex(0)
 
-    # ---------- menus ----------
-    def InitMenus(self):
-        """
-        Read keys/labels from PoseEfxSwitch/LandmarkFilterMenu_csv and set menu items
-        on every PoseEffect's LandmarkFilter (and mirror to its child landmarkSelect).
-        Does NOT set any filter on the switch itself (filters are per-effect).
-        If an effect's current selection is invalid, set the first key and seed its file param.
-        """
-        table = self.owner.op('LandmarkFilterMenu_csv')
-        if not table or table.numRows < 2:
-            print("[PoseEfxSwitchExt.InitMenus] Missing/empty LandmarkFilterMenu_csv")
+    # ----- landmark filter menus (per-effect) -----
+    def InitLandmarkMenus(self):
+        tbl = self.owner.op('LandmarkFilterMenu_csv')
+        if not tbl or tbl.numRows < 2:
+            print("[PoseEfxSwitchExt.InitLandmarkMenus] Missing/empty LandmarkFilterMenu_csv")
             return
-
-        heads = [c.val.lower() for c in table.row(0)]
+        heads = [c.val.lower() for c in tbl.row(0)]
         try:
             ki = heads.index('key'); li = heads.index('label'); ci = heads.index('csv')
         except ValueError:
-            print("[PoseEfxSwitchExt.InitMenus] CSV must have key,label,csv")
+            print("[PoseEfxSwitchExt.InitLandmarkMenus] CSV needs key,label,csv")
             return
-
         keys, labels, csvs = [], [], []
-        for r in table.rows()[1:]:
+        for r in tbl.rows()[1:]:
             k = r[ki].val.strip()
             if not k: continue
             keys.append(k)
@@ -145,121 +160,314 @@ class PoseEfxSwitchExt:
             csvs.append((r[ci].val or '').strip())
 
         for fx in self._effects():
-            # stamp menu items on the PoseEffect param UI
             fx.par.LandmarkFilter.menuNames  = keys
             fx.par.LandmarkFilter.menuLabels = labels
-            # also mirror to the child for consistent UI
             ls = fx.op('landmarkSelect')
             if ls:
                 ls.par.LandmarkFilter.menuNames  = keys
                 ls.par.LandmarkFilter.menuLabels = labels
-
-            # validate effect's current selection
+            # seed default csv if effect chose a non-custom key with a mapping
             cur = (fx.par.LandmarkFilter.eval() or '').strip()
-            if cur not in keys:
-                fx.par.LandmarkFilter = keys[0]
-                cur = keys[0]
-                if cur != 'custom':
-                    idx = keys.index(cur); defcsv = csvs[idx] if idx < len(csvs) else ''
-                    if defcsv:
-                        fx.par.Landmarkfiltercsv = defcsv
+            if cur in keys and cur != 'custom':
+                idx = keys.index(cur); defcsv = csvs[idx] if idx < len(csvs) else ''
+                if defcsv:
+                    fx.par.Landmarkfiltercsv = defcsv
 
-    # ---------- bindings ----------
-    def EnsureBindings(self):
-        """
-        Ensure each landmarkSelect reads its parent PoseEffect params via expressions.
-        (No bindings from effects back to the switch — filters are per-effect.)
-        """
+    def EnsureLandmarkBindings(self):
+        # child landmarkSelect params mirror their parent PoseEffect (one-way expressions)
         for fx in self._effects():
             ls = fx.op('landmarkSelect')
-            if not ls: 
-                continue
+            if not ls: continue
             if not ls.par.LandmarkFilter.expr:
                 ls.par.LandmarkFilter.expr = "op('..').par.LandmarkFilter.eval()"
             if not ls.par.Landmarkfiltercsv.expr:
                 ls.par.Landmarkfiltercsv.expr = "op('..').par.Landmarkfiltercsv.eval() or ''"
 
-    # ---------- switching ----------
+    # ----- effect menu (ActiveEffect) -----
+    def BuildEffectsMenu(self):
+        """Populate ActiveEffect from config/PoseEffectsMenu.csv, else auto-discover."""
+        keys, labels, ops, idxs = [], [], [], []
+        table = self.owner.op('PoseEffectsMenu_csv')
+
+        def add_row(k, lab, opName, ix):
+            if not k: return
+            keys.append(k); labels.append(lab or k); ops.append(opName or '')
+            idxs.append(int(ix) if str(ix).isdigit() else len(idxs))
+
+        if table and table.numRows > 1:
+            heads = [c.val.lower() for c in table.row(0)]
+            ki = heads.index('key')    if 'key'    in heads else -1
+            li = heads.index('label')  if 'label'  in heads else -1
+            oi = heads.index('opname') if 'opname' in heads else -1
+            ii = heads.index('index')  if 'index'  in heads else -1
+            rows = table.rows()[1:]
+            try:
+                rows = sorted(rows, key=lambda r: int(r[ii].val)) if ii >= 0 else rows
+            except Exception:
+                pass
+            for r in rows:
+                k  = r[ki].val.strip() if ki >= 0 else ''
+                lb = (r[li].val or '').strip() if li >= 0 else ''
+                op = (r[oi].val or '').strip() if oi >= 0 else ''
+                ix = r[ii].val.strip() if ii >= 0 else ''
+                add_row(k, lb, op, ix)
+        else:
+            # auto-discover PoseEffect_* children
+            for i, fx in enumerate(self._effects()):
+                nm  = fx.name
+                key = nm.replace('PoseEffect_', '').lower()
+                lab = key.title().replace('_',' ')
+                add_row(key, lab, nm, i)
+
+        # stamp menu
+        self.owner.par.ActiveEffect.menuNames  = keys
+        self.owner.par.ActiveEffect.menuLabels = labels
+
+        # build/update a local dispatch table for debugging
+        disp = self._ensureDispatchTable()
+        disp.clear(); disp.appendRow(['key','label','op','index'])
+        for i in range(len(keys)):
+            disp.appendRow([keys[i], labels[i], ops[i], idxs[i]])
+
+        # keep in sync
+        cur = (self.owner.par.ActiveEffect.eval() or '').strip()
+        if cur not in keys and keys:
+            self.owner.par.ActiveEffect = keys[0]
+        self.OnActiveEffectChanged()
+
+    def OnActiveEffectChanged(self):
+        key = (self.owner.par.ActiveEffect.eval() or '').strip()
+        idx = self._indexForKey(key)
+        if idx is not None and int(self.owner.par.ActiveIndex.eval() or -1) != idx:
+            self.owner.par.ActiveIndex = idx
+        self.SetActiveIndex(int(self.owner.par.ActiveIndex.eval() or 0))
+
+    def OnActiveIndexChanged(self):
+        idx = int(self.owner.par.ActiveIndex.eval() or 0)
+        key = self._keyForIndex(idx)
+        if key and (self.owner.par.ActiveEffect.eval() or '') != key:
+            self.owner.par.ActiveEffect = key
+        self.SetActiveIndex(idx)
+
+    def SetActiveEffect(self, key: str):
+        key = (key or '').strip()
+        keys = self._menuKeys()
+        if not keys: return
+        if key not in keys: key = keys[0]
+        self.owner.par.ActiveEffect = key
+        self.OnActiveEffectChanged()
+
     def SetActiveIndex(self, idx: int):
-        """Select which PoseEffect cooks and which fxOut is routed to out_switch."""
+        # route output & gate cooking
         sw = self.owner.op('out_switch')
         if sw: sw.par.index = int(idx)
-
         for i, fx in enumerate(self._effects()):
             active = (i == idx)
             fx.allowCooking = active
             core = fx.op('fxCore')
             if core: core.par.bypass = not active
-            # let the effect do its own activation work (rebuild selector, etc.)
             if hasattr(fx.ext, 'PoseEffectMasterExt'):
                 fx.ext.PoseEffectMasterExt.SetActive(active)
 
-    # ---------- service for children ----------
+    # ----- service for children (csv resolve) -----
     def ResolveMenuCSV(self, key: str) -> str:
-        """Lookup a menu key in LandmarkFilterMenu_csv and return its csv value."""
         key = (key or '').strip().lower()
-        table = self.owner.op('LandmarkFilterMenu_csv')
-        if not table or table.numRows < 2: return ''
-        heads = [c.val.lower() for c in table.row(0)]
+        tbl = self.owner.op('LandmarkFilterMenu_csv')
+        if not tbl or tbl.numRows < 2: return ''
+        heads = [c.val.lower() for c in tbl.row(0)]
         try:
             ki = heads.index('key'); ci = heads.index('csv')
         except ValueError:
             return ''
-        for r in table.rows()[1:]:
+        for r in tbl.rows()[1:]:
             if r[ki].val.strip().lower() == key:
                 return (r[ci].val or '').strip()
         return ''
 
-    # ---------- helpers ----------
+    # ----- helpers -----
     def _effects(self):
         eff = self.owner.op('effects')
-        return [c for c in (eff.children if eff else []) if c.isCOMP]
+        return [c for c in (eff.children if eff else []) if c.isCOMP and c.name.startswith('PoseEffect_')]
+
+    def _ensureDispatchTable(self):
+        disp = self.owner.op('EffectDispatch_csv')
+        if not disp:
+            disp = self.owner.create(tableDAT, 'EffectDispatch_csv')
+        return disp
+
+    def _menuKeys(self):
+        return list(self.owner.par.ActiveEffect.menuNames or [])
+
+    def _indexForKey(self, key):
+        disp = self.owner.op('EffectDispatch_csv')
+        if not disp or disp.numRows < 2: return None
+        heads = [c.val.lower() for c in disp.row(0)]
+        try:
+            ki = heads.index('key'); ii = heads.index('index')
+        except ValueError:
+            return None
+        for r in disp.rows()[1:]:
+            if r[ki].val == key:
+                try: return int(r[ii].val)
+                except: return None
+        return None
+
+    def _keyForIndex(self, idx):
+        disp = self.owner.op('EffectDispatch_csv')
+        if not disp or disp.numRows < 2: return ''
+        heads = [c.val.lower() for c in disp.row(0)]
+        try:
+            ki = heads.index('key'); ii = heads.index('index')
+        except ValueError:
+            return ''
+        for r in disp.rows()[1:]:
+            try:
+                if int(r[ii].val) == int(idx):
+                    return r[ki].val
+            except:
+                pass
+        return ''
 ```
 
-> **OnStart placement:** you asked to encapsulate it — we did. The `exec_init` inside PoseEfxSwitch runs `Initialize()` on project start. You don’t need a root Execute DAT. (If you do want one later, it can be a single line: `op('/project1/PoseEfxSwitch').ext.PoseEfxSwitchExt.Initialize()`.)
+### CAUTION: update wondering about both onActive*Changed
+
+Short answer: you won’t get an infinite loop if you (a) only write the “other” param when it actually differs and (b) optionally use a tiny re-entrancy guard. Here’s a safe pattern you can paste in.
+
+### Why this works
+
+- Changing **ActiveEffect** calls `OnActiveEffectChanged()`. That computes the mapped index and **only sets ActiveIndex if it’s different**.
+- That fires `OnActiveIndexChanged()`, which computes the mapped key and **only sets ActiveEffect if it’s different** (it won’t be, so it’s a no-op).
+- Result: 2 callbacks, 1 actual activation, no ping-pong.
+
+To be extra bulletproof (e.g., if someone later tweaks code and forgets the equality checks), add a simple `_syncing` flag.
 
 ------
 
-## 2) Build the PoseEffect_Master (template) once
+### Drop-in: safer callbacks with guard
 
-**Create:** `Base COMP` named `PoseEffect_Master` under `PoseEfxSwitch/effects`.
+In `PoseEfxSwitchExt.py`:
 
-**Add custom params on PoseEffect_Master (page “FILTER”):**
+```python
+class PoseEfxSwitchExt:
+    def __init__(self, owner):
+        self.owner = owner
+        self._syncing = False  # re-entrancy guard
 
-- `LandmarkFilter` (Menu)
-- `Landmarkfiltercsv` (File)
+    def OnActiveEffectChanged(self):
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            key = (self.owner.par.ActiveEffect.eval() or '').strip()
+            idx = self._indexForKey(key)
+            # Only set if different to avoid loops
+            if idx is not None and int(self.owner.par.ActiveIndex.eval() or -1) != idx:
+                self.owner.par.ActiveIndex = idx
+            # Activate (idempotent if already active)
+            self.SetActiveIndex(int(self.owner.par.ActiveIndex.eval() or 0))
+        finally:
+            self._syncing = False
 
-**Inside PoseEffect_Master add:**
+    def OnActiveIndexChanged(self):
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            idx = int(self.owner.par.ActiveIndex.eval() or 0)
+            key = self._keyForIndex(idx) or ''
+            # Only set if different to avoid loops
+            if key and (self.owner.par.ActiveEffect.eval() or '') != key:
+                self.owner.par.ActiveEffect = key
+            # Activate (idempotent if already active)
+            self.SetActiveIndex(idx)
+        finally:
+            self._syncing = False
+```
 
-- `in1` (CHOP In), `in2` (TOP In)
-- `landmarkSelect` (Base COMP)
-  - Add the same two custom params (`LandmarkFilter`, `Landmarkfiltercsv`)
-  - **Inside `landmarkSelect`:**
-    - `landmark_names` (Table DAT) → set **File** to `/data/landmark_names.csv`
-    - `landmark_mask` (Table DAT)  → (leave File blank; extension sets it)
-    - `select1` (Select CHOP) → set `par.op = ../in1` (leave `channame` empty)
-    - `outCHOP` (Null CHOP)
-  - Attach **LandmarkSelectExt** (below) via Component Editor → Extensions → Class `LandmarkSelectExt` (File: `ext/LandmarkSelectExt.py`)
-- `fxCore` (Base COMP) — **leave empty** in the master; each concrete effect fills this.
-- `fxOut` (TOP Out)
+Keep the rest of your `SetActiveIndex`, `_indexForKey`, `_keyForIndex`, etc., as-is.
 
-**Attach an extension to PoseEffect_Master:**
+------
 
-- Component Editor → Extensions → Class `PoseEffectMasterExt` (File: `ext/PoseEffectMasterExt.py`)
+### Minimal Parameter Execute DAT (unchanged)
 
-### `ext/PoseEffectMasterExt.py`
+Inside `PoseEfxSwitch`:
+
+```python
+def onValueChange(par, prev):
+    if par.name == 'ActiveEffect':
+        op('.').ext.PoseEfxSwitchExt.OnActiveEffectChanged()
+    elif par.name == 'ActiveIndex':
+        op('.').ext.PoseEfxSwitchExt.OnActiveIndexChanged()
+    elif par.name == 'RebuildEffectsMenu':
+        op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
+    return
+```
+
+------
+
+### Practical notes
+
+- You can pick a single “source of truth” (e.g., **ActiveEffect**) and hide **ActiveIndex** from UI. The guard still lets you script either one safely.
+- `SetActiveIndex()` should be idempotent (it only flips cooking and the output switch if the target actually changes).
+- If you later add “programmatic” activations (e.g., a hotkey that sets `ActiveIndex` directly), the same guard keeps everything stable.
+
+With these checks (and the guard), you won’t see race conditions or feedback loops.
+
+
+
+------
+
+## 2) Build the PoseEffect_Master (template)
+
+Create **`PoseEffect_Master`** (Base COMP) under `PoseEfxSwitch/effects`.
+
+### PoseEffect_Master — parameters & extensions
+
+- Custom params (page **FILTER**):
+
+  - `LandmarkFilter` (Menu)
+  - `Landmarkfiltercsv` (File)
+
+- Extension: **PoseEffectMasterExt** (Component Editor → Extensions → Class name `PoseEffectMasterExt`, File `ext/PoseEffectMasterExt.py`)
+
+- Add a **Parameter Execute DAT** inside `PoseEffect_Master`:
+
+  ```python
+  def onValueChange(par, prev):
+      if par.name in ('LandmarkFilter','Landmarkfiltercsv'):
+          op('.').ext.PoseEffectMasterExt.ApplyFilter()
+      return
+  ```
+
+### PoseEffect_Master — nodes
+
+- Inputs: `in1` (CHOP In), `in2` (TOP In)
+- **landmarkSelect** (Base COMP)
+  - Custom params: `LandmarkFilter` (Menu), `Landmarkfiltercsv` (File)
+  - Inside `landmarkSelect`:
+    - `landmark_names` — **Table DAT** → **File** = `data/landmark_names.csv`  ← *(local copy, simple & cached)*
+    - `landmark_mask`  — **Table DAT** (File left blank; set by ext)
+    - `select1` — **Select CHOP** → `par.op = ../in1` (leave `channame` blank)
+    - `outCHOP` — **Null CHOP**
+  - Extension: **LandmarkSelectExt** (Class `LandmarkSelectExt`, File `ext/LandmarkSelectExt.py`)
+- **fxOut** — TOP Out
+
+> **Master default output:** Simply pass `in2` to `fxOut` (so unimplemented effects visibly show the camera feed).
+>  Add a **Null TOP** `fxPass` and connect: `in2 → fxPass → fxOut`.
+
+> **Feeding inputs from the Switch:** The switch will connect `inCHOP → PoseEffect_*/in1` and **`guardTOP → PoseEffect_\*/in2`** (so you see **red** when the camera is missing).
+
+### `ext/PoseEffectMasterExt.py` (drop-in)
 
 ```python
 # ext/PoseEffectMasterExt.py
-# Lives on each PoseEffect_* (including PoseEffect_Master template).
-# Responsible for gating cooking and coordinating child rebuilds.
+# Lives on each PoseEffect_* (including the Master). Gates cooking and coordinates child rebuilds.
 
 class PoseEffectMasterExt:
     def __init__(self, owner):
         self.owner = owner
 
     def SetActive(self, active: bool):
-        """Called by the switch when this effect becomes (in)active."""
         self.owner.allowCooking = bool(active)
         core = self.owner.op('fxCore')
         if core: core.par.bypass = not active
@@ -267,34 +475,23 @@ class PoseEffectMasterExt:
             self.ApplyFilter()
 
     def ApplyFilter(self):
-        """Ask landmarkSelect to rebuild its Select CHOP pattern."""
         ls = self.owner.op('landmarkSelect')
         if ls and hasattr(ls.ext, 'LandmarkSelectExt'):
             ls.ext.LandmarkSelectExt.Rebuild()
 
     def ResolveMenuCSV(self, key: str) -> str:
-        """Delegate menu CSV lookup to the PoseEfxSwitch parent."""
-        switch = self.owner.parent()  # PoseEfxSwitch
+        # Ask the PoseEfxSwitch parent to resolve csv for 'key'
+        switch = self.owner.parent()
         if hasattr(switch.ext, 'PoseEfxSwitchExt'):
             return switch.ext.PoseEfxSwitchExt.ResolveMenuCSV(key)
         return ''
 ```
 
-> **Param change trigger (per effect):** Add a Parameter Execute DAT inside each PoseEffect_* with:
-
-```python
-def onValueChange(par, prev):
-    if par.name in ('LandmarkFilter','Landmarkfiltercsv'):
-        op('.').ext.PoseEffectMasterExt.ApplyFilter()
-    return
-```
-
-### `ext/LandmarkSelectExt.py`
+### `ext/LandmarkSelectExt.py` (drop-in)
 
 ```python
 # ext/LandmarkSelectExt.py
-# Lives on each landmarkSelect (child of a PoseEffect_*).
-# Builds Select CHOP channame based on parent's filter settings and menu CSV resolution.
+# Builds Select CHOP channame based on parent's filter settings and menu resolution.
 
 class LandmarkSelectExt:
     def __init__(self, owner):
@@ -304,7 +501,6 @@ class LandmarkSelectExt:
         key = (self.owner.par.LandmarkFilter.eval() or '').strip().lower()
         custom_csv = (self.owner.par.Landmarkfiltercsv.eval() or '').strip()
 
-        # ask parent PoseEffect to resolve default csv for key via the switch
         posefx = self.owner.parent()
         default_csv = ''
         if hasattr(posefx.ext, 'PoseEffectMasterExt'):
@@ -312,7 +508,7 @@ class LandmarkSelectExt:
 
         sel  = self.owner.op('select1')
         mask = self.owner.op('landmark_mask')
-        names = self.owner.op('landmark_names')
+        names= self.owner.op('landmark_names')
         if not sel or not mask or not names:
             self._log("Missing select1/landmark_mask/landmark_names.")
             return
@@ -325,7 +521,7 @@ class LandmarkSelectExt:
         else:
             mask.par.file = default_csv or ''
 
-        # build channel list
+        # build channels
         if key in ('', 'all'):
             nlist = _col_as_list(names, 'name')
             chans = _flatten([_xyz(n) for n in nlist])
@@ -376,149 +572,138 @@ def _col_as_list(tab, colname):
         return []
 
 def _xyz(name):
-    b = f"{name}_"; return [b+'x', b+'y', b+'z']
+    b=f"{name}_"; return [b+'x', b+'y', b+'z']
 
 def _dedup(seq):
-    seen, out = set(), []
+    seen,out=set(),[]
     for s in seq:
         if s and s not in seen:
             seen.add(s); out.append(s)
     return out
 
 def _flatten(xxs):
-    out = []; [out.extend(x) for x in xxs]; return out
+    out=[]; [out.extend(x) for x in xxs]; return out
 ```
 
-> **About sharing `/data/landmark_names.csv`:**
->  It’s tiny and cached — simplest is: each LandmarkSelect has its own `landmark_names` Table DAT pointing at the same file. If you prefer one shared copy later, put a `landmark_names` Table DAT in `PoseEfxSwitch` and tweak `LandmarkSelectExt` to fall back to `op('../../landmark_names')` if the local one is missing.
+> **Landmark names source:** Each `landmarkSelect` keeps its own local `landmark_names` (simple + cached). If you later want a shared table, you can adjust the ext to fall back to `op('../../landmark_names')`.
 
 ------
 
-## 3) Smoke test — make `PoseEffect_Dots` (clone of Master)
+## 3) Grow concrete effects (Option A: clones of Master)
 
-**Clone from the template:**
+For each effect:
 
-1. Under `PoseEfxSwitch/effects`, create `PoseEffect_Dots` (Base COMP).
-2. Set **Clone** = `PoseEffect_Master`; **Enable Cloning**.
-3. Dive in and set only `fxCore` **Clone Immune = On**.
+1. Under `PoseEfxSwitch/effects`, create `PoseEffect_<Name>` (Base COMP).
+2. Set **Clone** = `PoseEffect_Master`. Enable **Cloning**.
+3. Dive in → set **only** `fxCore` to **Clone Immune = On**.
+    *(No change to this policy—the red fallback & pass-through do not alter Clone Immune requirements.)*
+4. Build the effect’s unique network **inside `fxCore`** and wire its final TOP to `../fxOut`.
+5. In the switch, wire `PoseEffect_<Name>/fxOut` to the next input of `out_switch`.
+6. Use the **ActiveEffect** menu to activate it.
 
-**Build a minimal `fxCore` (Dots):**
+------
 
-- Add `landmarks_sop` (**Script SOP**) and paste:
+## 4) Minimal `fxCore` recipes
+
+### A) **Dots** (one dot per landmark)
+
+Inside `PoseEffect_Dots/fxCore`:
+
+- `landmarks_sop` (**Script SOP**):
 
   ```python
   def cook(scriptOp):
       scriptOp.clear()
       src = op('../landmarkSelect/outCHOP')
-      xch = [c for c in src.chans if c.name.endswith('_x')]
-      for cx in xch:
+      for cx in [c for c in src.chans if c.name.endswith('_x')]:
           base = cx.name[:-2]; cy = src.get(base + '_y')
           if not cy: continue
           scriptOp.appendPoint([float(cx[0]), float(cy[0]), 0.0])
       return
   ```
 
-- Add `dot` (**Circle SOP**) radius ~0.005
+- `dot` (Circle SOP, small) → `copy` (Copy SOP to `landmarks_sop`)
 
-- Add `copy` (**Copy SOP**): left = `dot`, right = `landmarks_sop`
+- `geo` (Geometry COMP with SOP = `copy`) → `Render TOP` → `Null TOP` → `../fxOut`
 
-- Add `geo` (Geometry COMP) → SOP path `copy`
+- (Optional) Composite with `../in2` for over-camera effect.
 
-- Add `rend` (Render TOP) → `null` → connect to `../fxOut`
+### B) **StickMan** (simple skeleton)
 
-- (Optional) Composite with `../inTOP`
+Inside `fxCore`:
 
-**Wire output into the switch:**
+- `edges` (Table DAT) → File: `data/skeleton_edges.csv` (`a,b`)
 
-- Connect `PoseEffect_Dots/fxOut` to `PoseEfxSwitch/out_switch` input 0.
-- In `PoseEfxSwitch`, set `ActiveIndex = 0`.
+- `pairEval` (Script CHOP):
 
-**Pick a filter for Dots:**
+  ```python
+  import math
+  def onCook(scriptOp):
+      scriptOp.clear()
+      src = op('../landmarkSelect/outCHOP'); edges = op('edges')
+      tx=scriptOp.appendChan('tx'); ty=scriptOp.appendChan('ty')
+      rz=scriptOp.appendChan('rz'); sc=scriptOp.appendChan('s')
+      for r in edges.rows()[1:]:
+          a,b = r[0].val, r[1].val
+          ax,ay = src.get(f"{a}_x"), src.get(f"{a}_y")
+          bx,by = src.get(f"{b}_x"), src.get(f"{b}_y")
+          if None in (ax,ay,bx,by): tx.append(0); ty.append(0); rz.append(0); sc.append(0); continue
+          ax,ay,bx,by = ax[0],ay[0],bx[0],by[0]
+          cx,cy = (ax+bx)/2,(ay+by)/2; dx,dy = (bx-ax),(by-ay)
+          tx.append(cx); ty.append(cy)
+          rz.append(math.degrees(math.atan2(dy,dx)))
+          sc.append((dx*dx+dy*dy)**0.5)
+      return
+  ```
 
-- Open `PoseEffect_Dots` → set `LandmarkFilter = all` (or `hands`, etc.).
-- The child `landmarkSelect/select1.channame` should fill with the matching channels.
-- You should see dots render; only Dots cooks (others are cold).
+- `bar` (Rectangle SOP, thin) → `geo` (Instancing ON)
 
-------
+  - Instance CHOP = `pairEval`
+  - Tx=tx, Ty=ty, Rz=rz, Scale X = s
 
-## 4) Next effects (quick recipes)
+- `Render TOP` → `../fxOut`
 
-### A) StickMan (simple skeleton)
+### C) **HandEmitters** (quick trails)
 
-- Clone `PoseEffect_Master` → `PoseEffect_StickMan`
+Inside `fxCore`:
 
-- Set `fxCore` Clone Immune.
+- `hands` (Select CHOP) from `../landmarkSelect/outCHOP` with `channame = *hand*_*`
+- Simple feedback:
+  - `feedback` (Feedback TOP)
+  - `level` (opacity 0.95)
+  - `dotL`, `dotR` (small Constant TOPs) → two **Transform TOPs** whose Translate X/Y expressions read selected hand channels scaled by resolution (e.g., `op('../hands')['handtip_l_x'][0]*width` / `*height`)
+  - `comp` (Composite TOP, Add): `feedback + dotL + dotR` → `level` → back to `feedback`
+- Output `comp` (or a copy) to `../fxOut`
 
-- Inside `fxCore`:
+### D) **TexturedMutant** (textured bones)
 
-  - `edges` (Table DAT) → File: `/data/skeleton_edges.csv` (cols `a,b`)
+- Reuse `pairEval` from StickMan.
+- `grid` (Grid SOP with UVs) + material (Phong/Constant with a texture).
+- Instance with Tx/Ty/Rz/Sx; optionally animate shader.
 
-  - `pairEval` (Script CHOP):
-
-    ```python
-    import math
-    def onCook(scriptOp):
-        scriptOp.clear()
-        src = op('../landmarkSelect/outCHOP'); edges = op('edges')
-        tx=scriptOp.appendChan('tx'); ty=scriptOp.appendChan('ty')
-        rz=scriptOp.appendChan('rz'); sc=scriptOp.appendChan('s')
-        for r in edges.rows()[1:]:
-            a,b = r[0].val, r[1].val
-            ax,ay = src.get(f"{a}_x"), src.get(f"{a}_y")
-            bx,by = src.get(f"{b}_x"), src.get(f"{b}_y")
-            if None in (ax,ay,bx,by): tx.append(0); ty.append(0); rz.append(0); sc.append(0); continue
-            ax,ay,bx,by = ax[0],ay[0],bx[0],by[0]
-            cx,cy = (ax+bx)/2,(ay+by)/2; dx,dy = (bx-ax),(by-ay)
-            tx.append(cx); ty.append(cy)
-            rz.append(math.degrees(math.atan2(dy,dx)))
-            sc.append((dx*dx+dy*dy)**0.5)
-        return
-    ```
-
-  - `bar` (Rectangle SOP) size X≈0.015 Y≈0.001 → `geo` (Instancing ON)
-
-    - Instance CHOP = `pairEval`
-    - Tx=tx, Ty=ty, Rz=rz, Sx=s
-
-  - `Render TOP` → `fxOut`
-
-### B) HandEmitters (quick trails)
-
-- Clone → `PoseEffect_HandEmit`
-- In PoseEffect params, set `LandmarkFilter = hands`.
-- In `fxCore`:
-  - `hands` (Select CHOP) op= `../landmarkSelect/outCHOP`, channame = `*hand*_*`
-  - Simple feedback trail:
-    - `feedback` (Feedback TOP)
-    - `level` (opacity 0.95)
-    - `composite` (Add): place “dot” TOPs at hand positions via two **Transform TOPs** whose `tx/ty` expressions read the `hands` channels multiplied by render size.
-    - Feedback loop: `composite → level → feedback → composite`
-  - Output composite to `fxOut`.
-
-### C) TexturedMutant (textured bones)
-
-- Clone → `PoseEffect_TexturedMutant`
-- Reuse StickMan’s `pairEval`.
-- Replace `bar` with `grid` (Grid SOP, with UVs) + **Material** (Phong/Constant with a texture).
-- Instance the grid cards with the same `tx,ty,rz,scale` mapping; optionally use `Scale Y` to control thickness, animate shader.
-
-> Heavy nodes: set **Cook Type = Selective** (Common page) so only the active effect pays.
+> For heavy TOPs/RENDER ops: set **Common ▸ Cook Type = Selective**. The switch already gates cooking (`allowCooking`) so only the active effect pays.
 
 ------
 
-## 5) FAQ & tips
+## 5) Hook it together & smoke test
 
-- **Where does onStart live?** Inside `PoseEfxSwitch` — see `exec_init`. That encapsulates initialization so the root stays clean.
-- **Why no LandmarkFilter on the switch?** Filters are per-effect; some effects need different inputs (e.g., Hands vs All). The switch just routes and manages cooking.
-- **Sharing `landmark_names`?** Easiest: each LandmarkSelect has its own `landmark_names` Table DAT pointing at the same CSV. It’s tiny and cached. If you want one shared copy later, move a single `landmark_names` DAT into PoseEfxSwitch and tweak `LandmarkSelectExt` to read that when present.
-- **Clones vs tox:** During dev, keep **clones of Master** and only `fxCore` Clone Immune. When satisfied, you can export each effect as a `.tox` for portability.
-- **COMP cook control:** Use `fx.allowCooking` (COMP cook flag) at effect level and **Selective** on heavy nodes. There is no “Cook Type” on a COMP.
+1. Connect **PoseCam** → `PoseEfxSwitch/inCHOP` + `PoseEfxSwitch/inTOP`.
+2. Clone `PoseEffect_Master` → `PoseEffect_Dots`; in `fxCore` build dots; wire `../fxOut`.
+3. In `PoseEfxSwitch`, wire `PoseEffect_Dots/fxOut` to `out_switch` input 0.
+4. Use **ActiveEffect** menu to pick “Dots”.
+5. On `PoseEffect_Dots`, set `LandmarkFilter` to `all` (or `hands`) and verify `landmarkSelect/select1.channame` fills and dots render.
+6. Unplug camera: `guardTOP` turns **red**, and the master pass-through shows red too (clear signal the camera is missing / effect is still pass-through).
 
 ------
 
-You now have a minimal, modular scaffold that’s fast to iterate:
+## 6) FAQ
 
-1. Wire **PoseCam → PoseEfxSwitch.inCHOP / inTOP**
-2. Clone **PoseEffect_Master → PoseEffect_Dots**, build dots `fxCore`, connect to `out_switch[0]`
-3. Set **ActiveIndex = 0** and pick a **LandmarkFilter** on the effect
-4. Rinse, clone, and fill `fxCore` for StickMan / HandEmitters / TexturedMutant.
+- **Where’s onStart?** Inside the switch as `exec_init.onStart() → PoseEfxSwitchExt.Initialize()`. Self-contained.
+- **Do filters live on the switch?** No—**per effect** only. The switch just provides the menu items and CSV resolver.
+- **Why local `landmark_names` per LandmarkSelect?** It’s tiny and cached; simplest approach. You can centralize later if needed.
+- **Does the red fallback change Clone Immune?** No. Keep **only `fxCore`** Clone Immune in each concrete effect. The master’s default pass-through and the switch’s red guard don’t affect that.
+- **Growing new effects?** Clone the master, set `fxCore` Clone Immune, build inside `fxCore`, wire to `fxOut`, add to `out_switch`, done.
+
+------
+
+You’re set to iterate quickly: the switch gives you a clean UI and cooking control, the master guarantees a consistent interface, and each effect focuses only on its `fxCore`.
