@@ -40,7 +40,7 @@ Create a `Base COMP` named **`PoseEfxSwitch`**.
   - `inCHOP` — CHOP In from PoseCam/person router (unprefixed channels)
   - `inTOP`  — TOP In from PoseCam (camera/NDI)
 
-- **Red fallback (obvious when no camera)**
+- **Red fallback (obvious when no camera)** call it noFx
 
   - `redConst` — Constant TOP (set RGBA to 1,0,0,1)
 
@@ -81,7 +81,7 @@ Customize Component… (page **SWITCH**):
    Columns: `key,label,csv` (e.g., `all,All,` / `hands,Hands,data/masks_hands.csv` / …)
 - *(Optional)* `PoseEffectsMenu_csv` — **Table DAT** → **File** = `config/PoseEffectsMenu.csv`
    Columns: `key,label,opName,index`
-   If present, this dictates the ActiveEffect menu; otherwise the switch **auto-discovers** child `PoseEffect_*` under `effects/`.
+   If present, this dictates the ActiveEffect menu; otherwise the switch **auto-discovers** child `PoseEffect_*` under `effects/`. (in the PoseEfxSwitchExt.py i guess)
 
 ### Add the switch extension and init
 
@@ -345,6 +345,8 @@ To be extra bulletproof (e.g., if someone later tweaks code and forgets the equa
 
 ### Drop-in: safer callbacks with guard
 
+i think we updated these
+
 In `PoseEfxSwitchExt.py`:
 
 ```python
@@ -452,7 +454,7 @@ Create **`PoseEffect_Master`** (Base COMP) under `PoseEfxSwitch/effects`.
   - Extension: **LandmarkSelectExt** (Class `LandmarkSelectExt`, File `ext/LandmarkSelectExt.py`)
 - **fxOut** — TOP Out
 
-> **Master default output:** Simply pass `in2` to `fxOut` (so unimplemented effects visibly show the camera feed).
+> **Master default output:** Simply pass `in2` to `fxOut`u (so unimplemented effects visibly show the camera feed).
 >  Add a **Null TOP** `fxPass` and connect: `in2 → fxPass → fxOut`.
 
 > **Feeding inputs from the Switch:** The switch will connect `inCHOP → PoseEffect_*/in1` and **`guardTOP → PoseEffect_\*/in2`** (so you see **red** when the camera is missing).
@@ -594,11 +596,18 @@ def _flatten(xxs):
 For each effect:
 
 1. Under `PoseEfxSwitch/effects`, create `PoseEffect_<Name>` (Base COMP).
+
 2. Set **Clone** = `PoseEffect_Master`. Enable **Cloning**.
+
+   Not sure where this is - asking chat for clarification
+
 3. Dive in → set **only** `fxCore` to **Clone Immune = On**.
     *(No change to this policy—the red fallback & pass-through do not alter Clone Immune requirements.)*
+
 4. Build the effect’s unique network **inside `fxCore`** and wire its final TOP to `../fxOut`.
+
 5. In the switch, wire `PoseEffect_<Name>/fxOut` to the next input of `out_switch`.
+
 6. Use the **ActiveEffect** menu to activate it.
 
 ------

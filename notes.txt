@@ -56,3 +56,9 @@ the project root (poseCamTox_dev) is an example of the use of poseCamTox.  The P
 this kinda rearchitects the whole PoseEfxSwitch
 so now have revised PoseEfxSwitch Architecture Rev 21 Aug
 which gets updated now on rev c+.
+
+as I go thru implementing by the guides, i note things that are odd and 
+likely need updating, perhaps at higher level or lower in code/network.
+I'll try to keep the Architecture doc up to date but like need an as-built pass
+---
+4pm 21 aug... almost have it but apparently the parameters are incorrect

@@ -2,43 +2,42 @@
 # -----------------------------------------------------------------------------
 # PoseEfxSwitchExt
 # -----------------------------------------------------------------------------
-# Attach this extension to your PoseEfxSwitch COMP.
+# Attach this extension to the PoseEfxSwitch COMP.
 #
-# Responsibilities:
+# Responsibilities
 #   • Build the ActiveEffect (menu) from PoseEffectsMenu_csv (if present),
-#     otherwise auto-discover PoseEffect_* children under ./effects.
+#     or auto-discover PoseEffect_* children under ./effects.
 #   • Keep ActiveEffect (menu) and ActiveIndex (int) in sync WITHOUT loops.
 #   • Activate exactly one PoseEffect_*:
 #       - Route out_switch.index
-#       - Set fx.allowCooking True for active, False for others
-#       - Toggle fxCore.bypass (False when active, True when not)
-#       - Call each effect’s PoseEffectMasterExt.SetActive(active)
-#   • Stamp LandmarkFilter menu items (names/labels) into each PoseEffect
-#     and its child landmarkSelect from LandmarkFilterMenu_csv.
-#   • Ensure each landmarkSelect reads its parent PoseEffect params via expressions:
-#       LandmarkFilter  = op('..').par.LandmarkFilter.eval()
-#       Landmarkfiltercsv = op('..').par.Landmarkfiltercsv.eval() or ''
+#       - fx.allowCooking  = True for active, False for others
+#       - fxCore.bypass    = False for active, True for others
+#       - fx.ext.PoseEffectMasterExt.SetActive(active)
+#   • Stamp LandmarkFilter menu items into each PoseEffect and its child
+#     landmarkSelect from LandmarkFilterMenu_csv (key,label,csv).
+#   • Ensure each landmarkSelect reads its parent PoseEffect params via expressions.
 #
 # Expected nodes inside PoseEfxSwitch:
-#   - LandmarkFilterMenu_csv   (Table DAT: key,label,csv)  ← REQUIRED
-#   - PoseEffectsMenu_csv      (Table DAT: key,label,opName,index) ← OPTIONAL
-#   - effects/                 (Base COMP container for PoseEffect_* children)
-#   - out_switch               (Switch TOP)
+#   - LandmarkFilterMenu_csv  (Table DAT: key,label,csv)               ← REQUIRED
+#   - PoseEffectsMenu_csv     (Table DAT: key,label,opName,index)      ← OPTIONAL
+#   - effects/                (Base COMP container for PoseEffect_* children)
+#   - out_switch              (Switch TOP)
 #
 # UI parameters on PoseEfxSwitch (Customize Component…):
-#   - ActiveEffect    (Menu)     ← user-facing
-#   - ActiveIndex     (Int)      ← internal (can be hidden)
-#   - RebuildEffectsMenu (Pulse) ← optional refresh button
+#   - ActiveEffect       (Menu)     ← user-facing effect picker
+#   - ActiveIndex        (Int)      ← internal index (hide if you like)
+#   - RebuildEffectsMenu (Pulse)    ← optional manual refresh
 #
 # Initialization:
-#   - Place an Execute DAT inside PoseEfxSwitch with:
+#   - Put an Execute DAT *inside* PoseEfxSwitch with:
 #       def onStart(): op('.').ext.PoseEfxSwitchExt.Initialize()
 #
 # Notes:
-#   - Filters (LandmarkFilter/Landmarkfiltercsv) are per-effect, not on this switch.
-#   - The switch’s LandmarkFilterMenu_csv is the single source of truth for filter menus.
-#   - When wiring outputs, ensure each PoseEffect_*/fxOut is connected to out_switch
-#     at the index you expect (especially if you rely on an explicit 'index' column).
+#   - Filters (LandmarkFilter/Landmarkfiltercsv) live on each PoseEffect instance.
+#   - LandmarkFilterMenu_csv here is the single source of truth for filter menus.
+#   - Auto-discovery prefers per-effect params if present on each PoseEffect:
+#       Effectkey (Str), Effectlabel (Str), Menuindex (Int)
+#     otherwise derives key/label from the COMP name and order.
 # -----------------------------------------------------------------------------
 
 class PoseEfxSwitchExt:
@@ -134,6 +133,7 @@ class PoseEfxSwitchExt:
         Populate ActiveEffect (menu) from PoseEffectsMenu_csv if present; otherwise
         auto-discover PoseEffect_* children under ./effects. Also (re)build a local
         EffectDispatch_csv mapping table with columns: key,label,op,index.
+        Auto-discovery prefers per-effect params: Effectkey, Effectlabel, Menuindex.
         """
         keys, labels, ops, idxs = [], [], [], []
         cfg = self.owner.op('PoseEffectsMenu_csv')
@@ -169,12 +169,36 @@ class PoseEfxSwitchExt:
                 ix  = r[ii].val.strip() if ii >= 0 else ''
                 add_row(k, lab, opn, ix)
         else:
-            # Auto-discover PoseEffect_* children
+            # Auto-discover PoseEffect_* children (prefer per-effect params)
             for i, fx in enumerate(self._effects()):
-                name = fx.name
-                key  = name.replace('PoseEffect_', '').lower()
-                lab  = key.title().replace('_', ' ')
-                add_row(key, lab, name, i)
+                # Prefer per-effect params if present
+                key_par   = getattr(fx.par, 'Effectkey', None)
+                label_par = getattr(fx.par, 'Effectlabel', None)
+                idx_par   = getattr(fx.par, 'Menuindex', None)
+
+                # Derive defaults from name
+                dkey = fx.name.replace('PoseEffect_', '').lower()
+                dlab = dkey.title().replace('_', ' ')
+
+                key = (key_par.eval() if key_par else '') or dkey
+                lab = (label_par.eval() if label_par else '') or dlab
+                try:
+                    ix = int(idx_par.eval()) if idx_par is not None and str(idx_par.eval()).strip() != '' else i
+                except Exception:
+                    ix = i
+
+                add_row(key, lab, fx.name, ix)
+
+            # Keep any explicit Menuindex ordering
+            order = list(range(len(idxs)))
+            try:
+                order = sorted(order, key=lambda j: int(idxs[j]))
+            except Exception:
+                pass
+            keys   = [keys[j]   for j in order]
+            labels = [labels[j] for j in order]
+            ops    = [ops[j]    for j in order]
+            idxs   = [idxs[j]   for j in order]
 
         # Stamp the UI menu
         self.owner.par.ActiveEffect.menuNames  = keys
@@ -304,7 +328,6 @@ class PoseEfxSwitchExt:
 
     def _menuKeys(self):
         """Return the list of menu keys currently set on ActiveEffect."""
-        # menuNames may be a tuple-like object; coerce to list
         names = self.owner.par.ActiveEffect.menuNames or []
         return list(names)
 
