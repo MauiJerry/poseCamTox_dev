@@ -1,5 +1,7 @@
 # WIRING
 
+this is old likely outdated documentation. initially created by ChatGPT for how to setup the PoseCamTox project.
+
 ### PoseCam COMP
 1) OSC In DAT: **poseoscIn1**
 2) Table DAT: **landmark_map** → File: `td/data/landmark_names.csv`

@@ -45,3 +45,14 @@ Such as details on how to add an Extension to a COMP
 i repeatedly asked chat to elaborate or redo its plan doc, 
 some of these are saved in ./docs/*.md
 
+21 August
+as I build these out, the question of the contents of the LandmarkSelectMenu looms
+The menu is used in LandmarkSelect comp buried in each PoseEffect_MASTER
+Current design was not really thinking of the replication/copy aspect
+so i prompted:
+
+the project root (poseCamTox_dev) is an example of the use of poseCamTox.  The PoseCam Comp reads the OSC/NDI and feeds them to the PoseEfxSwitch. That component has one or more PoseEffect instances (derived from PoseEffectMaster), and a switch interface that defines which PoseEffect is active and whose output TOP is streamed to its OutTop.  So perhaps the best location for the LandmarkFilterMenu_csv would be in PoseEfxSwitch Comp, which is the parent of all PoseEffect (including Master tox?).  Lets review the full architecture of this PoseEfxSwitch Comp with idea of a) being part of reusable Pose2Art architecture b) getting something done asap so we can build out a few PoseEffect_* with their specific fxCore. to demo the whole thing.
+
+this kinda rearchitects the whole PoseEfxSwitch
+so now have revised PoseEfxSwitch Architecture Rev 21 Aug
+which gets updated now on rev c+.
