@@ -1,4 +1,5 @@
 # PoseEfxSwitch/guard_meta
+TARGET_OP = 'guardedMeta'
 
 def _comp():
     # This Text DAT sits inside PoseEfxSwitch
@@ -26,8 +27,10 @@ def _upsert(t, key, value):
         if t[r,0].val == key:
             if t[r,1].val != sval:
                 t[r,1].val = sval
+                print("guard_meta upsert Updated:", key, "->", sval)
             return
     t.appendRow([key, sval])
+    print("guard_meta Inserted:", key, "->", sval)
 
 def _read_upstream(d):
     """Return dict from a 2-col key/value table (header tolerant)."""
@@ -70,14 +73,14 @@ def _safe_aspect(w, h):
 
 def update_guard():
     """Merge upstream meta with defaults; ensure image_width, image_height, aspect."""
-    debug('update_guard() called')
+    # print('update_guard() called')
     comp = _comp()
-    t = _op('outMeta')
-    src = _op('inMeta')
-    if not t:
+    targetOp = _op(TARGET_OP)
+    sourceOp = _op('inMeta')
+    if not targetOp:
         return
 
-    upstream = _read_upstream(src)
+    upstream = _read_upstream(sourceOp)
 
     # 1) Determine width/height: prefer upstream, else defaults.
     dw = comp.par.Defaultcanvasw.eval() if hasattr(comp.par, 'Defaultcanvasw') else 1280
@@ -87,8 +90,8 @@ def update_guard():
     h = upstream.get('image_height', dh)
 
     # 2) Upsert required keys first (using resolved w/h).
-    _upsert(t, 'image_width', _to_int(w, dw))
-    _upsert(t, 'image_height', _to_int(h, dh))
+    _upsert(targetOp, 'image_width', _to_int(w, dw))
+    _upsert(targetOp, 'image_height', _to_int(h, dh))
 
     # 3) Aspect: prefer upstream if valid, else compute from resolved w/h.
     up_aspect = upstream.get('aspect', None)
@@ -96,12 +99,12 @@ def update_guard():
         aspect_val = float(up_aspect) if up_aspect is not None else _safe_aspect(w, h)
     except Exception:
         aspect_val = _safe_aspect(w, h)
-    _upsert(t, 'aspect', aspect_val)
+    _upsert(targetOp, 'aspect', aspect_val)
 
     # 4) Mirror all other upstream keys (but don't overwrite the three we just set).
     for k, v in upstream.items():
         if k in ('image_width', 'image_height', 'aspect'):
             continue
-        _upsert(t, k, v)
+        _upsert(targetOp, k, v)
 
     # Done. 'guarded_meta' now holds required keys even with no upstream.
