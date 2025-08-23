@@ -2,6 +2,10 @@
 
 ### PoseEffect_Dots — Script CHOP code + fxCore wiring
 
+how to wire up the DOTS effect
+
+revised 23Aug
+
 Below is a **drop‑in Script CHOP** for the `PoseEffect_Dots/fxCore/landmark_to_instances` node.
  It consumes a single‑person skeleton CHOP (channels like `head_x, head_y, head_z, …`) and produces **per‑instance** channels for a GEO instancing rig:
 
@@ -17,44 +21,45 @@ Below is a **drop‑in Script CHOP** for the `PoseEffect_Dots/fxCore/landmark_to
 
 ------
 
-#### `landmark_to_instances` (Script CHOP) — `cook()` implementation
+Perfect—here’s a drop‑in **fx_dots** Script CHOP that matches your parameter names and reads render dimensions from the **inMeta Table DAT** (per your comment). I also included the tiny DAT you’ll add inside `fxCore` so EfxSwitch can **promote and bind** the controls up to the Effects menu.
+
+# 1) Script CHOP (fxCore/landmark_to_instances)
+
+Paste this into a **Script CHOP** named `landmark_to_instances` inside `PoseEffect_Dots/fxCore`. Wire its input to your single‑person skeleton CHOP (from your `landmarkSelect/outCHOP` or equivalent).
 
 ```python
 # PoseEffect_Dots / fxCore / landmark_to_instances (Script CHOP)
-# Builds instancing attributes from a single-person skeleton CHOP.
+# Builds instancing attributes for a dot per landmark.
+# Uses inMeta (Table DAT) for image_width/height as per PoseEffectMASTER guidance.
 
-import math, hashlib
+import hashlib
 
-def _fx():
-    # The fxCore COMP (parent of this Script CHOP)
-    return parent()
+def _fx(): return parent()  # fxCore COMP
 
 def _par_val(name, default=None):
-    # Case-insensitive accessor for custom pars (CanvasH vs Canvash, etc.)
-    core = _fx()
-    for p in core.customPars:
-        if p.name.lower() == name.lower():
-            try:  # try tuple first (e.g., Color RGBA)
-                return p.eval() if p.tupletSize == 1 else tuple(p.eval())
-            except:
-                return p.eval()
-    return default
+    p = getattr(_fx().par, name, None)
+    if not p: return default
+    try:
+        # return tuple for color, scalar otherwise
+        return tuple(p.eval()) if getattr(p, 'tupletSize', 1) > 1 else p.eval()
+    except:
+        return p.eval() if hasattr(p, 'eval') else default
 
-def _meta_dim(dim_name, fallback):
-    # If meta CHOP (input 1) has image_{width,height}, use those; else fallback parm
-    if len(scriptOP.inputs) >= 2 and scriptOP.inputs[1] is not None:
-        meta = scriptOP.inputs[1]
-        ch = meta.chan(dim_name)
-        if ch and ch.numSamples > 0:
-            return max(1, int(ch[0]))
-    return int(fallback)
+def _meta_int(row, default):
+    """Read guarded meta from inMeta Table DAT (row key, 'value' column)."""
+    meta = op('inMeta')  # this is provided/guarded by MASTER
+    try:
+        cell = meta[row, 'value']
+        return int(cell.val) if cell and cell.val != '' else int(default)
+    except:
+        return int(default)
 
 def _uv_to_ndc(x, y):
-    # Convert UV [0..1] to NDC [-1..1] with Y-up
+    # UV [0..1] → NDC [-1..1], Y-up
     return (x * 2.0 - 1.0, (1.0 - y) * 2.0 - 1.0)
 
 def _hash_color(name):
-    # Deterministic pseudo-random color per landmark name (pastel-ish)
+    # Deterministic pastel-ish color per landmark name
     h = hashlib.md5(name.encode('utf8')).digest()
     r = (h[0] / 255.0) * 0.7 + 0.3
     g = (h[1] / 255.0) * 0.7 + 0.3
@@ -64,171 +69,128 @@ def _hash_color(name):
 def cook(scriptOP):
     scriptOP.clear()
 
-    # --- Inputs & config ---
+    # --- Inputs ---
     skel = scriptOP.inputs[0] if scriptOP.numInputs >= 1 else None
-    if skel is None or skel.numChans == 0:
-        return  # nothing to do
+    if not skel or skel.numChans == 0:
+        return
 
-    origin = (_par_val('Origin', 'UV_0_1') or 'UV_0_1').upper()
-    canvas_w = _meta_dim('image_width',  _par_val('CanvasW', 1280))
-    canvas_h = _meta_dim('image_height', _par_val('CanvasH', 720))
+    # --- Read meta via inMeta (guarded) ---
+    canvas_w = _meta_int('image_width',  1280)
+    canvas_h = _meta_int('image_height', 720)
 
-    colorMode = (_par_val('ColorMode', 'Fixed') or 'Fixed').upper()
-    baseColor = _par_val('Color', (1.0, 1.0, 1.0, 1.0))
-    opacity   = float(_par_val('Opacity', 1.0))
+    # --- Style params ---
+    colorType = str(_par_val('ColorType', 'solid')).strip().lower()   # 'solid'|'random'
+    baseColor = _par_val('Color', (1.0, 1.0, 1.0))                    # RGB
     dotSizePx = float(_par_val('DotSize', 8.0))
 
-    # --- Derive landmark base names from *_x channels ---
-    # A landmark is present if we have <name>_x and <name>_y (z is optional/confidence)
-    lm_names = []
+    # --- Landmark list from *_x / *_y pairs ---
+    names = []
     for ch in skel.chans():
         nm = ch.name
         if nm.endswith('_x'):
             base = nm[:-2]
-            if skel.chan(base + '_y') is not None:  # must have y
-                lm_names.append(base)
-
-    lm_names.sort()  # stable ordering (optional)
-    n = len(lm_names)
+            if skel.chan(base + '_y') is not None:
+                names.append(base)
+    names.sort()
+    n = len(names)
     if n == 0:
         return
 
-    # Each sample corresponds to one instance
+    # --- Output channels (1 sample per landmark / instance) ---
     scriptOP.numSamples = n
+    tx  = scriptOP.appendChan('tx')
+    ty  = scriptOP.appendChan('ty')
+    scl = scriptOP.appendChan('scale')
+    rch = scriptOP.appendChan('r')
+    gch = scriptOP.appendChan('g')
+    bch = scriptOP.appendChan('b')
+    ach = scriptOP.appendChan('a')
 
-    # Create output channels
-    tx   = scriptOP.appendChan('tx')
-    ty   = scriptOP.appendChan('ty')
-    scl  = scriptOP.appendChan('scale')  # uniform instancing scale
-    rch  = scriptOP.appendChan('r')
-    gch  = scriptOP.appendChan('g')
-    bch  = scriptOP.appendChan('b')
-    ach  = scriptOP.appendChan('a')
-
-    # Compute per-pixel scale in NDC (orthographic camera width=2)
-    # Pixel height in NDC ≈ 2/canvas_h. We want 'dotSizePx' pixels.
+    # Pixel-to-NDC scale (ortho camera width = 2)
     pixel_to_ndc = 2.0 / max(1.0, float(canvas_h))
-    per_inst_scale = dotSizePx * pixel_to_ndc
+    per_instance_scale = dotSizePx * pixel_to_ndc
 
-    # Output per landmark
-    for i, base in enumerate(lm_names):
+    # Solid color (RGB) → use full alpha by default
+    if isinstance(baseColor, (tuple, list)):
+        base_r = float(baseColor[0] if len(baseColor) > 0 else 1.0)
+        base_g = float(baseColor[1] if len(baseColor) > 1 else 1.0)
+        base_b = float(baseColor[2] if len(baseColor) > 2 else 1.0)
+    else:
+        base_r, base_g, base_b = 1.0, 1.0, 1.0
+
+    for i, base in enumerate(names):
         x = skel[base + '_x'][0] if skel.chan(base + '_x') else 0.5
         y = skel[base + '_y'][0] if skel.chan(base + '_y') else 0.5
 
-        if origin.startswith('UV'):
-            X, Y = _uv_to_ndc(float(x), float(y))
-        else:
-            # assume already NDC
-            X, Y = float(x), float(y)
+        X, Y = _uv_to_ndc(float(x), float(y))
+        tx[i], ty[i], scl[i] = X, Y, per_instance_scale
 
-        tx[i] = X
-        ty[i] = Y
-        scl[i] = per_inst_scale
-
-        if colorMode.startswith('RANDOM'):
+        if colorType.startswith('random'):
             cr, cg, cb = _hash_color(base)
-            rch[i], gch[i], bch[i] = cr, cg, cb
-            ach[i] = opacity
+            rch[i], gch[i], bch[i], ach[i] = cr, cg, cb, 1.0
         else:
-            # Fixed color (RGB[A]); TD RGB custom par yields a 3‑tuple,
-            # RGBA may yield 4; fall back to opacity for alpha if not provided.
-            if isinstance(baseColor, (tuple, list)):
-                cr = float(baseColor[0]) if len(baseColor) > 0 else 1.0
-                cg = float(baseColor[1]) if len(baseColor) > 1 else 1.0
-                cb = float(baseColor[2]) if len(baseColor) > 2 else 1.0
-                ca = float(baseColor[3]) if len(baseColor) > 3 else opacity
-            else:
-                cr, cg, cb, ca = 1.0, 1.0, 1.0, opacity
-            rch[i], gch[i], bch[i], ach[i] = cr, cg, cb, ca
+            rch[i], gch[i], bch[i], ach[i] = base_r, base_g, base_b, 1.0
 
     return
 ```
 
-------
+**Why this matches your stack:**
 
-## Other operators inside `PoseEffect_Dots/fxCore`
+- It looks up `image_width`/`image_height` directly from the **inMeta Table DAT** you forward into each effect (your guard makes those always present), so dot size is **pixel‑true** without needing extra CHOPs.
+- Parameter names are exactly: `ColorType` (solid|random), `Color` (RGB), `DotSize` (float). The Script CHOP only reads these three, per your request.
 
-Build the `fxCore` like this:
+# 2) Minimal fxCore wiring (TD editor clicks)
 
-```
-fxCore/
-  CHOP In (0): skeleton_in     # from PersonRouter (single person)
-  CHOP In (1): meta_in         # optional: image_width, image_height
-  Null CHOP: null_skel         # pass-through of skeleton_in
-  Switch CHOP: meta_mux        # meta_in if connected else Constant
-  Constant CHOP: meta_fallback # image_width/height from CanvasW/H pars
-  Script CHOP: landmark_to_instances  # code above (inputs: null_skel, meta_mux)
-  Rectangle SOP: dot_rect      # unit quad
-  Geometry COMP: dot_geo
-      - Instance OP = landmark_to_instances
-      - Instance Translate X = tx
-      - Instance Translate Y = ty
-      - Instance Uniform Scale = scale
-  Constant MAT: dot_mat
-      - Enable Blending (Over or Add)
-      - Color from instancing: toggle "Use Point Color" (or bind to r/g/b/a)
-  Camera COMP: cam
-      - Orthographic, width = 2 (to match NDC)
-  Render TOP: render1 (cam + dot_geo)
-  Out TOP: out_color
-```
+Inside `PoseEffect_Dots/fxCore`:
 
-**Notes**
+1. Add the Script CHOP above and wire its **Input 0** to the single‑person skeleton (e.g., `../landmarkSelect/outCHOP`). Your `landmarkSelect` lives in the effect template and is driven by `LandmarkFilter`, default **ALL**.
+2. SOP/Instancing:
 
-- The Script CHOP sets `scale` so dots measure in pixels regardless of render size (assuming an **ortho** camera width = 2).
-- If you prefer **sprite points**: use a Point SOP → Geo with **Point Sprite MAT**; still drive `scale` and color from the Script CHOP.
+- Add a **Rectangle SOP** (unit quad) → **Geometry COMP** (`dot_geo`).
+- In `dot_geo ▸ Instance`:
+  - **Instance OP** = `landmark_to_instances`
+  - **Translate X** = `tx`, **Translate Y** = `ty`
+  - **Uniform Scale** = `scale`
+- Add a **Constant MAT** (`dot_mat`), enable **Blending: Over** (or Add), and tick **Use Point Color** (so r/g/b/a from the instance CHOP drive color).
+- Add an **Orthographic Camera** with **Width = 2** and a **Render TOP** → **fxOut**.
 
-------
+This is the same instancing pattern we designed for Dots.
 
-## Promoting parameters to the UI Builder (through `PoseEffect_Dots`)
+# 3) Promote & bind parameters to the EfxSwitch menu
 
-You have two solid options. Both play nicely with your **UI Builder** and **ShowControl** layer.
+To surface and bind your three controls from the active effect **up into the EfxSwitch UI page**, add either:
 
-### Option A — Explicit expose table (recommended)
-
-Inside `PoseEffect_Dots/fxCore`, create a **Table DAT** named `expose_params` with **one parameter per row** (the parameter **names** as they appear on `fxCore`):
+**Option A (explicit table, recommended):**
+ Create a **Table DAT** named `expose_params` **inside `PoseEffect_Dots/fxCore`** with one parameter name per row:
 
 ```
-UiColor
-UiDotSize
-UiOpacity
-UiColorMode
-Origin
-CanvasW
-CanvasH
+ColorType
+Color
+DotSize
 ```
 
-### Option B — Implicit prefix
+Your existing switch/UI scripts can read this table and build the bound “FX_Active” page so changes at the switch propagate down and vice‑versa.
 
-Name the parameters you want to expose with a **`Ui\*` prefix**, e.g., `UiColor`, `UiDotSize`, `UiOpacity`, `UiColorMode`. The UI Builder can auto‑discover these by prefix.
+**Option B (implicit prefix):**
+ Rename your pars to `UiColorType`, `UiColor`, `UiDotSize` and let the switcher auto‑discover by prefix. (The explicit table is cleaner and avoids renames.)
 
-> Either path lets your master `PoseEfxSwitcher` auto‑surface the active effect’s parameters into a single “FX_Active” parameter page (bound 1:1 back to the `fxCore`). The control flow then works for both **panel UI** and **OSC show control** without extra glue.
+> If you’re using the **FX_Active page builder** from the UI/ShowControl guide, it will copy menu items, colors, ranges, etc., and **bind** the master page parameters back to the `fxCore` pars automatically.
+
+# 4) Create the three custom parameters on fxCore
+
+In the TD editor: **fxCore → right‑click → Customize Component…**
+
+- Page **Style** (or “Dots”):
+  - **ColorType** (Menu): items `solid` and `random`. Default `solid`.
+  - **Color** (RGB): default `1,1,1`.
+  - **DotSize** (Float): default `8.0` (set a slider range like 1–64).
+
+Update `expose_params` (Option A) to list those names. Rebuild your FX page on the switch if you’re using the helper.
+
+# 5) Default Landmark Type = ALL
+
+On the effect’s `landmarkSelect` (child COMP in the template), set **LandmarkFilter** default to `all`. That ensures Dots starts with every landmark shown. (The switch template seeds and syncs that menu across effects.)
 
 ------
 
-## Hooking it into the PoseCam architecture
-
-1. **Data flow**
-   - `OSC In DAT` (bundles) → `Script CHOP (fanout)` → `PersonRouter` → **`PoseEffect_Dots/fxCore/skeleton_in`**.
-   - Optional meta (`image_width/height`) into `fxCore/meta_in`. If not connected, the Script CHOP uses `CanvasW/H`.
-2. **Switching**
-   - Your `PoseEfxSwitcher` keeps one child per effect (e.g., `PoseEffect_Dots`, `PoseEffect_Skeleton`, …).
-   - Only the selected effect is cooked (others set to **Selective Cook**).
-3. **UI / ShowControl**
-   - After adding/renaming pars or the `expose_params` table, rebuild the UI page:
-     - Rebuild effect menu (if needed).
-     - Rebuild active FX page to pull controls from `fxCore`.
-   - Upstream controllers can call your OSC endpoints to select the effect and set parameters; the **feedback** echoes changes back.
-
-------
-
-## Quick checklist
-
--  Add custom pars on `fxCore`: `UiColor (RGB)`, `UiDotSize (Float)`, `UiOpacity (Float)`, `UiColorMode (Menu: Fixed|RandomPerLandmark)`, `Origin (Menu: UV_0_1|NDC_-1_1)`, `CanvasW/H (Int)`.
--  Create `expose_params` (or prefix with `Ui*`).
--  Paste the Script CHOP code into `landmark_to_instances` and wire inputs (skeleton/meta).
--  Configure `dot_geo` instancing (Translate X/Y, Uniform Scale=scale).
--  Ortho camera width=2 → pixel sizing works.
--  Add **Out TOP**.
-
-If you want the **Skeleton** Script CHOP next (instanced quads with length/angle), say the word and I’ll drop in that code too.
+If you want, I can also drop a tiny **Point Sprite** variant (no Render TOP) or a **GLSL TOP** version later—this one is the cleanest to get you live quickly and matches your inMeta DAT + EfxSwitch exposure model.

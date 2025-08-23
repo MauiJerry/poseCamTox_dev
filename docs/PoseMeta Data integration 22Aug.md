@@ -209,7 +209,7 @@ Now changing the Switch defaults ripples to every effect (unless a clone breaks 
 
 ------
 
-### 1) Inputs inside `PoseEffect_MASTER/fxCore`
+#### 1) Inputs inside `PoseEffect_MASTER/fxCore`
 
 1. Dive into `PoseEffect_MASTER/fxCore`.
 2. **CHOP In** for landmarks
