@@ -14,8 +14,6 @@ Make `PoseCamIn` publish a tiny **poseMeta CHOP** (`image_width`, `image_height`
 
 (removed original, it didnt know we had posefanout.py)
 
-### Plan
-
 Yes—do it right in `pose_fanout.py`: keep emitting the fast numeric meta as CHOP channels, **and** mirror the slow-changing bits into a **PoseMeta Table DAT** (key/value) that only updates when a value actually changes. Downstream COMPs (PoseEfxSwitch, UI, etc.) can reference that DAT without forcing per-frame cooks. Your current script already extracts these fields and writes `timestamp_str` to a text DAT; we’ll extend it to also maintain a key/value table. 
 
 ------
@@ -180,48 +178,144 @@ If you want, I can also add a tiny **DAT Execute** to throttle `timestamp_str` u
 2. Back on **`PoseEffect_MASTER` ▸ Canvas** page, **Bind**:
 
    - `Canvasw` → `../..` (the switch) ▸ `Defaultcanvasw`.
+
    - `Canvash` → `../..` ▸ `Defaultcanvash`.
+
    - (Optional) style pars → corresponding defaults.
+
+     eg parent(2).par.Defaultcanvasw
 
    > To bind: RMB the parameter ▸ **Bind…** ▸ pick the target operator & parameter.
 
 Now changing the Switch defaults ripples to every effect (unless a clone breaks the bind).
 
-#### B3) Inside `PoseEffect_MASTER/fxCore` add the meta mux
+### B3) Inside `PoseEffect_MASTER/fxCore` add the meta mux
 
-1. Dive into **`PoseEffect_MASTER/fxCore`**.
 
-2. Add **CHOP In** (index 0) named `skeleton_in` (already there in most templates).
 
-3. Add **CHOP In** (index 1) named `meta_in`.
+#### Revised B3) `fxCore` expects **DAT** meta (no fallback)
 
-4. Add **Constant CHOP** `meta_fallback` with channels:
+> Goal: `fxCore` reads `image_width` / `image_height` (and any other keys) from an upstream **Table DAT** (e.g., `poseMetaDAT`) with this shape:
+>
+> ```
+> key           value
+> image_width   1280
+> image_height  720
+> num_persons   1
+> timestamp_str 2025.08.22.14.33.01.123
+> ```
+>
+> No Constant/Switch/fallback CHOP—just consume the DAT directly.
 
-   - `image_width` = `op('..').par.Canvasw.eval()`
-   - `image_height` = `op('..').par.Canvash.eval()`
+------
 
-5. Add **Switch CHOP** `meta_mux`:
+### 1) Inputs inside `PoseEffect_MASTER/fxCore`
 
-   - **Input 0** = `meta_fallback`
+1. Dive into `PoseEffect_MASTER/fxCore`.
+2. **CHOP In** for landmarks
+   - **Tab → CHOP → In**, name: `LandmarksIn`
+   - **Operator Index**: `0` (first CHOP input on the parent).
+3. **DAT In** for meta
+   - **Tab → DAT → In**, name: `meta_in_dat`
+   - **Operator Index**: `0` (first DAT input on the parent).
 
-   - **Input 1** = `meta_in`
+> Tip: At the **`PoseEffect_MASTER` (parent)** level, turn on **Node View → Connectors → DAT**, then wire the upstream `poseMetaDAT` (from `PoseCamIn`) to this fxCore’s DAT input.
 
-   - **Index** expression:
+------
 
-     ```
-     1 if op('..').par.Usemeta and op('meta_in') and len(op('meta_in').channels) >= 2 else 0
-     ```
+### 2) Point your output TOP’s resolution to the **DAT**
 
-6. Set your **Render TOP** (inside `fxCore`) ▸ **Common ▸ Resolution = Specify**:
+1. Select your **Render/GLSL/Composite TOP** that is the **output of `fxCore`**.
 
-   - **W**: `int(op('meta_mux')['image_width'][0])`
-   - **H**: `int(op('meta_mux')['image_height'][0])`
+2. **Common tab → Resolution = Specify**.
 
-7. Ensure your landmark pre‑process (Script CHOP) converts **UV → NDC** and uses **pixel size from CanvasH**:
+3. Set **W** (Python expression):
 
-   - Per‑pixel NDC scale ≈ `2 / image_height` → `DotSizePx * (2 / image_height)`.
+   ```python
+   int(op('meta_in_dat')['image_width','value'])
+   ```
 
-> If your effect composites over a background TOP (`../in2`), keep doing that. The meta just sets the render size & pixel math.
+4. Set **H** (Python expression):
+
+   ```python
+   int(op('meta_in_dat')['image_height','value'])
+   ```
+
+> If the fields turn red, it means the DAT isn’t wired yet or the keys don’t exist.
+
+------
+
+### 3) Using meta inside your CHOP/DAT scripts in `fxCore`
+
+- Anywhere in Python inside `fxCore`, you can read values directly:
+
+  ```python
+  meta = op('meta_in_dat')
+  img_w = int(meta['image_width','value'])
+  img_h = int(meta['image_height','value'])
+  n_ppl = int(meta['num_persons','value'])
+  ts_str = meta['timestamp_str','value']  # keep as string for labels/UI
+  ```
+
+- For NDC pixel scaling in a Script CHOP (e.g., dot size in pixels → NDC):
+
+  ```python
+  px_to_ndc = 2.0 / max(1.0, img_h)
+  dot_ndc_radius = parent().par.Dotsizepx.eval() * px_to_ndc
+  ```
+
+------
+
+### 4) Optional: if an effect node **requires CHOP** meta
+
+Some nodes (like a Math/Limit CHOP chain) may prefer CHOP channels. Convert the DAT locally:
+
+1. **Select DAT** to drop the header row
+
+   - **Tab → DAT → Select**, name: `meta_rows`
+   - **DAT**: `meta_in_dat`
+   - **Row Select → By Index Range**: Start = `1`, End = `-1` (skip the header row)
+
+2. **DAT to CHOP** to form channels
+
+   - **Tab → CHOP → DAT to CHOP**, name: `meta_from_dat`
+   - **DAT**: `meta_rows`
+   - **Use First Column for Names**: **On** (creates channels `image_width`, `image_height`, …)
+   - (Keep “First Row is Headers” **Off** here.)
+
+3. Now you can read:
+
+   ```python
+   int(op('meta_from_dat')['image_width'][0])
+   int(op('meta_from_dat')['image_height'][0])
+   ```
+
+> This conversion is optional; stay DAT-only if your expressions and scripts can read from the table directly (simpler and lighter).
+
+------
+
+### 5) Parent-level wiring (so `fxCore` gets the DAT)
+
+- At `PoseEffect_MASTER` (parent):
+  - Ensure **Connectors → DAT** is enabled.
+  - Wire `/PoseCamIn/outMetaDAT` (or your upstream meta DAT Out) to the `PoseEffect_MASTER`’s **DAT input**.
+  - Landmarks CHOP still wires to the **CHOP input 0** as before.
+
+------
+
+### 6) Quick sanity checks
+
+- Middle-click `meta_in_dat` inside `fxCore` → you should see the two-column table; confirm keys/values.
+
+- Temporarily change `image_width`/`image_height` upstream → the `fxCore` output TOP should immediately adopt the new resolution.
+
+- If you need the human-readable time in UI elements: bind text fields to
+
+  ```python
+  op('meta_in_dat')['timestamp_str','value']
+  ```
+
+That’s it—`fxCore` now **expects a DAT** for meta, zero fallback logic, and drives its resolution and math directly from the table.
 
 ------
 
