@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 pose_fanout.py (DAT-based, Bundle-only)
 ---------------------------------------
@@ -55,14 +55,14 @@ _RE_NUM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lid>\d+)$")
 _RE_NAM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lname>[A-Za-z0-9_]+)$")
 
 # --- TouchDesigner compatibility helpers (method vs property) ----------------
-def _upsert_meta(key, value):  # NEW
+def _upsert_meta(key, value):  
     """
     Upsert key->value into the poseMetaDAT table, writing only when changed.
     Initializes the header if the table was empty or wrong shape.
     """
     t = _op_lookup(POSE_META_DAT_NAME)
     if not t:
-        return
+        return False
     # Ensure header exists and is correct
     if _nrows(t) == 0 or _ncols(t) < 2 or (t[0,0].val.strip().lower() != 'key'):
         t.clear()
@@ -77,9 +77,12 @@ def _upsert_meta(key, value):  # NEW
             break
     if row_index is None:
         t.appendRow([key, sval])
+        return True
     else:
         if t[row_index, 1].val != sval:
             t[row_index, 1].val = sval
+            return True
+    return False # nothing changed
 
 def _get_val(attr):
     """Return attr() if callable, else attr (for TD versions where numRows/numCols
@@ -363,19 +366,25 @@ def onCook(scriptOp):
     if ts_str:
         _set_text_dat(TS_STR_DAT_NAME, ts_str)
         
-        # --- NEW: mirror slow-changing items into poseMetaDAT (key/value table) ---
+    # --- NEW: mirror slow-changing items into poseMetaDAT (key/value table) ---
     # Only updates when value actually changes (cheap for TD’s cook graph)
+    meta_updated = False
     if img_w is not None:
-        _upsert_meta('image_width', int(img_w))
+        meta_updated = _upsert_meta('image_width', int(img_w)) or meta_updated
     if img_h is not None:
-        _upsert_meta('image_height', int(img_h))
+        meta_updated = _upsert_meta('image_height', int(img_h)) or meta_updated
     if num_persons is not None:
-        _upsert_meta('num_persons', int(num_persons))
+        meta_updated = _upsert_meta('num_persons', int(num_persons)) or meta_updated
     if ts_str:
-        _upsert_meta('timestamp_str', ts_str)
+        meta_updated = _upsert_meta('timestamp_str', ts_str) or meta_updated
     # Optional: if you want a coarse numeric timestamp that updates ~1 Hz:
-    if ts_sec is not None:
-        _upsert_meta('timestamp_sec', int(ts_sec)) 
+    if frame_count is not None and meta_updated: 
+        _upsert_meta('frame_count', int(frame_count)) 
+
+    # If any of the primary metadata changed, also record the frame_count
+    # at which the change occurred.
+    if meta_updated and frame_count is not None:
+        _upsert_meta('frame_count', int(frame_count))
 
     if LOG_BUNDLES:
         _log_to_text_dat(snap)
