@@ -62,3 +62,16 @@ likely need updating, perhaps at higher level or lower in code/network.
 I'll try to keep the Architecture doc up to date but like need an as-built pass
 ---
 4pm 21 aug... almost have it but apparently the parameters are incorrect
+
+---
+getting vscode hooked up to touchDesigner
+per Chat instructions
+
+chat said to set DAT preferences Text Editor to
+code --reuse-window --goto "$path:$line"
+i tried and failed with :
+C:/Users/isdal/AppData/Local/Programs/Microsoft VS Code/Code.exe --reuse-window --goto "$path:$line"
+original was 
+C:/Users/isdal/AppData/Local/Programs/Microsoft VS Code/Code.exe
+
+just set it back

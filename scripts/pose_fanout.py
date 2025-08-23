@@ -7,13 +7,13 @@ TouchDesigner Script CHOP that parses PoseCamPC **Bundle-mode** OSC rows from an
 OSC In DAT (poseoscIn1) and fans them out into CHOP channels.
 
 Recognized incoming OSC messages:
-  Metadata:
+  Metadata: (saved to channel and poseMetaDAT)
     /pose/frame_count       <int>
     /pose/num_persons       <int>
     /pose/image_width       <int>
     /pose/image_height      <int>
     /pose/timestamp         <float seconds since epoch>
-    /pose/timestamp_str     <string "YYYY.MM.DD.HH.MM.SS.ms">
+    /pose/timestamp_str     <string "YYYY.MM.DD.HH.MM.SS.ms"> (strings dont go into chop)
 
   Landmarks:
     /pose/p{pid}/{lid}      <float x> <float y> <float z>
@@ -27,6 +27,9 @@ Outputs (CHOP channels):
   - pose_frame_count
   - pose_img_w, pose_img_h
   - pose_ts_sec, pose_ts_ms
+  
+  PoseMetaDAT
+
 
 String mirroring:
   - If a Text DAT named 'pose_ts_str' exists, /pose/timestamp_str is written there.
@@ -42,6 +45,7 @@ import logging
 OSC_IN_DAT_NAME      = 'poseoscIn1'
 ID_MAP_DAT_NAME      = 'landmark_map'
 TS_STR_DAT_NAME      = 'pose_ts_str'
+POSE_META_DAT_NAME   = 'poseMetaDAT'   # NEW  (Table DAT with header: key,value)
 
 LOG_BUNDLES          = False
 LOG_FILE             = 'pose_fanout.log'
@@ -51,6 +55,32 @@ _RE_NUM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lid>\d+)$")
 _RE_NAM = re.compile(r"^/(?:pose/)?p(?P<pid>\d+)/(?P<lname>[A-Za-z0-9_]+)$")
 
 # --- TouchDesigner compatibility helpers (method vs property) ----------------
+def _upsert_meta(key, value):  # NEW
+    """
+    Upsert key->value into the poseMetaDAT table, writing only when changed.
+    Initializes the header if the table was empty or wrong shape.
+    """
+    t = _op_lookup(POSE_META_DAT_NAME)
+    if not t:
+        return
+    # Ensure header exists and is correct
+    if _nrows(t) == 0 or _ncols(t) < 2 or (t[0,0].val.strip().lower() != 'key'):
+        t.clear()
+        t.appendRow(['key', 'value'])
+
+    sval = str(value)
+    # find existing row
+    row_index = None
+    for r in range(1, _nrows(t)):
+        if t[r, 0].val == key:
+            row_index = r
+            break
+    if row_index is None:
+        t.appendRow([key, sval])
+    else:
+        if t[row_index, 1].val != sval:
+            t[row_index, 1].val = sval
+
 def _get_val(attr):
     """Return attr() if callable, else attr (for TD versions where numRows/numCols
     are methods vs. properties)."""
@@ -263,7 +293,7 @@ def onCook(scriptOp):
             logger.debug(line)
             snap.append(line)
 
-        # -- metadata
+        # -- grab metadata to local variables
         if addr == '/pose/frame_count':
             v = _safe_float(a1); frame_count = int(v) if v is not None else frame_count; continue
         if addr == '/pose/num_persons':
@@ -332,6 +362,20 @@ def onCook(scriptOp):
         _append_scalar(scriptOp, 'm_ts_ms', ts_sec * 1000.0)
     if ts_str:
         _set_text_dat(TS_STR_DAT_NAME, ts_str)
+        
+        # --- NEW: mirror slow-changing items into poseMetaDAT (key/value table) ---
+    # Only updates when value actually changes (cheap for TD’s cook graph)
+    if img_w is not None:
+        _upsert_meta('image_width', int(img_w))
+    if img_h is not None:
+        _upsert_meta('image_height', int(img_h))
+    if num_persons is not None:
+        _upsert_meta('num_persons', int(num_persons))
+    if ts_str:
+        _upsert_meta('timestamp_str', ts_str)
+    # Optional: if you want a coarse numeric timestamp that updates ~1 Hz:
+    if ts_sec is not None:
+        _upsert_meta('timestamp_sec', int(ts_sec)) 
 
     if LOG_BUNDLES:
         _log_to_text_dat(snap)

@@ -1,4 +1,8 @@
-# PoseMeta Data integration 22Aug
+# PoseMeta Data integration 
+
+chat 22 aug 4pm
+
+backup and revise PoseCamIn with revised script
 
 ### Goal
 
@@ -6,69 +10,144 @@ Make `PoseCamIn` publish a tiny **poseMeta CHOP** (`image_width`, `image_height`
 
 ------
 
-### Part A — Add `poseMeta` in `/PoseCamIn`
+### Part A — Add `poseMeta` in PoseCamIn
 
-#### A1) Ensure you have the OSC receiver
+(removed original, it didnt know we had posefanout.py)
 
-1. In `/PoseCamIn`, drop an **OSC In DAT** named `osc_pose`.
-   - Set **Network Port** to your pose sender port (e.g., `7400`).
-   - Set **Maximum Messages** to something modest (e.g., `500`) to avoid huge tables.
-2. Confirm it’s **Active** (green flag).
+### Plan
 
-#### A2) Build a tiny Script CHOP that emits meta
+Yes—do it right in `pose_fanout.py`: keep emitting the fast numeric meta as CHOP channels, **and** mirror the slow-changing bits into a **PoseMeta Table DAT** (key/value) that only updates when a value actually changes. Downstream COMPs (PoseEfxSwitch, UI, etc.) can reference that DAT without forcing per-frame cooks. Your current script already extracts these fields and writes `timestamp_str` to a text DAT; we’ll extend it to also maintain a key/value table. 
 
-1. Still inside `/PoseCamIn`, drop a **Script CHOP** named `pose_meta_build`.
-2. Click **Edit…** and paste:
+------
+
+### TouchDesigner edits (one-time)
+
+1. **Inside `/PoseCamIn`**, add a **Table DAT** named `poseMetaDAT` with a header row:
+
+   ```
+   key    value
+   ```
+
+2. (Optional but recommended) Add an **Out DAT** named `outMetaDAT`. Set its **DAT** parameter to `poseMetaDAT` so `/PoseCamIn` exposes a clean DAT output connector.
+
+3. Ensure `/PoseCamIn`’s **Node View → Connectors** has **DAT** turned on so the DAT output jack is visible.
+
+> Keep your existing OSC In DAT (`poseoscIn1`) and Script CHOP that runs `pose_fanout.py` as-is.
+
+------
+
+### Patch `pose_fanout.py`
+
+Add the constant for the table name, a small “upsert” helper, and call it after you parse values.
+
+> Below shows only the **additions/changes** (search for `# NEW` comments).
 
 ```python
-# /PoseCamIn/pose_meta_build (Script CHOP)
+# --- add near other constants -----------------------------------------------
+POSE_META_DAT_NAME   = 'poseMetaDAT'   # NEW  (Table DAT with header: key,value)
 
-def cook(scriptOP):
-    d = op('osc_pose')  # OSC In DAT with pose bundles
-    scriptOP.clear()
+# --- add helper near other helpers ------------------------------------------
+def _upsert_meta(key, value):  # NEW
+    """
+    Upsert key->value into the poseMetaDAT table, writing only when changed.
+    Initializes the header if the table was empty or wrong shape.
+    """
+    t = _op_lookup(POSE_META_DAT_NAME)
+    if not t:
+        return
+    # Ensure header exists and is correct
+    if _nrows(t) == 0 or _ncols(t) < 2 or (t[0,0].val.strip().lower() != 'key'):
+        t.clear()
+        t.appendRow(['key', 'value'])
 
-    # Find latest values in the OSC DAT (scan from bottom up)
-    def _find_latest(addr):
-        if not d or d.numRows == 0:
-            return None
-        for i in range(d.numRows - 1, -1, -1):
-            a = d[i, 0].val if d.numCols > 0 else ''
-            if a == addr:
-                # Find first numeric arg in the row
-                for c in range(1, d.numCols):
-                    v = d[i, c].val
-                    try:
-                        return float(v)
-                    except Exception:
-                        pass
-        return None
+    sval = str(value)
+    # find existing row
+    row_index = None
+    for r in range(1, _nrows(t)):
+        if t[r, 0].val == key:
+            row_index = r
+            break
+    if row_index is None:
+        t.appendRow([key, sval])
+    else:
+        if t[row_index, 1].val != sval:
+            t[row_index, 1].val = sval
 
-    w = _find_latest('/pose/image_width')
-    h = _find_latest('/pose/image_height')
-    fps = _find_latest('/pose/fps')
+# --- in onCook(), keep your existing parsing; then below your meta outputs ---
+    # counts & metadata  prefix with m_ so as not to muck with later wild card p*
+    if num_persons is None:
+        num_persons = len(present)
+    _append_scalar(scriptOp, 'm_n_people', float(num_persons))
 
-    # Hold last-known values so a momentary drop doesn't zero things
-    if w is None:
-        w = scriptOP.storage.get('w', 1280.0)
-    if h is None:
-        h = scriptOP.storage.get('h', 720.0)
+    if frame_count is not None:
+        _append_scalar(scriptOp, 'm_frame_count', float(frame_count))
+    if img_w is not None:
+        _append_scalar(scriptOp, 'm_img_w', float(img_w))
+    if img_h is not None:
+        _append_scalar(scriptOp, 'm_img_h', float(img_h))
+    if ts_sec is not None:
+        _append_scalar(scriptOp, 'm_ts_sec', ts_sec)
+        _append_scalar(scriptOp, 'm_ts_ms', ts_sec * 1000.0)
+    if ts_str:
+        _set_text_dat(TS_STR_DAT_NAME, ts_str)
 
-    # Emit channels
-    ch_w = scriptOP.appendChan('image_width');  ch_w[0] = w
-    ch_h = scriptOP.appendChan('image_height'); ch_h[0] = h
-    ch_ar = scriptOP.appendChan('aspect_ratio'); ch_ar[0] = (w / h) if h else 1.7778
-    if fps is not None:
-        ch_fps = scriptOP.appendChan('fps'); ch_fps[0] = fps
-
-    # Remember for next cook
-    scriptOP.storage['w'] = w
-    scriptOP.storage['h'] = h
-    if fps is not None:
-        scriptOP.storage['fps'] = fps
-    return
+    # --- NEW: mirror slow-changing items into poseMetaDAT (key/value table) ---
+    # Only updates when value actually changes (cheap for TD’s cook graph)
+    if img_w is not None:
+        _upsert_meta('image_width', int(img_w))
+    if img_h is not None:
+        _upsert_meta('image_height', int(img_h))
+    if num_persons is not None:
+        _upsert_meta('num_persons', int(num_persons))
+    if ts_str:
+        _upsert_meta('timestamp_str', ts_str)
+    # Optional: if you want a coarse numeric timestamp that updates ~1 Hz:
+    if ts_sec is not None:
+        _upsert_meta('timestamp_sec', int(ts_sec))   # comment out if too chatty
 ```
 
-1. Add a **Null CHOP** after it named `pose_meta_out`.
+**What this gives you**
+
+- The Script CHOP still outputs **fast** meta as channels (`m_*`) for any per-frame consumers.
+- `poseMetaDAT` holds **slow-changing** meta as strings/numbers (`image_width`, `image_height`, `num_persons`, `timestamp_str`, optional `timestamp_sec`) and only updates when values change—so downstream UI/FX that depend on table cells won’t recook every frame. 
+
+------
+
+### Downstream usage examples
+
+- **Wired approach:** In a consumer COMP, drop an **In DAT** named `inMeta` and wire from `/PoseCamIn/outMetaDAT`. Then:
+
+  - Parameter expression (Python):
+
+    ```python
+    float(op('inMeta')['num_persons','value'])
+    ```
+
+  - Label text (Python):
+
+    ```python
+    op('inMeta')['timestamp_str','value']
+    ```
+
+- **By path (no wire):**
+
+  ```python
+  float(op('/project1/PoseCamIn/poseMetaDAT')['image_width','value'])
+  ```
+
+------
+
+### Notes & options
+
+- If you decide `frame_count` should also be in the DAT, add `_upsert_meta('frame_count', int(frame_count))`. It will update every frame, which is fine for a table but does trigger dependent cooks each time—use only where needed.
+- You can compute and store convenience values here too (e.g., `aspect_ratio = img_w / img_h` when both are non-zero) via `_upsert_meta('aspect_ratio', img_w / img_h)`.
+- Keeping `timestamp_str` in **both** a Text DAT (for simple UI binds) and the table is harmless; many UIs prefer a single `poseMetaDAT` source. 
+
+------
+
+If you want, I can also add a tiny **DAT Execute** to throttle `timestamp_str` updates to 1 Hz, but with the upsert guard it’s already efficient unless you bind dozens of params to it.
+
+
 
 > Optional (nice to have): add a **Constant CHOP** `pose_meta_fallback` with `image_width=1280`, `image_height=720`, and switch to it if the OSC DAT is inactive. For now, the storage fallback above is enough.
 
