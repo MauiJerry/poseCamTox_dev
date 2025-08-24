@@ -4,9 +4,9 @@
 # -----------------------------------------------------------------------------
 # Attach this extension to the PoseEfxSwitch COMP.
 #
-# Responsibilities
-#   • Build the ActiveEffect (menu) from PoseEffectsMenu_csv (if present),
-#     or auto-discover PoseEffect_* children under ./effects.
+# Responsibilities (finalized 23 Aug):
+#   • Build the ActiveEffect menu labels from PoseEffect parent.par.UiDisplayName
+#     (fall back to pretty OP name). Menu values remain stable keys (OP names).
 #   • Keep ActiveEffect (menu) and ActiveIndex (int) in sync WITHOUT loops.
 #   • Activate exactly one PoseEffect_*:
 #       - Route out_switch.index
@@ -19,32 +19,23 @@
 #
 # Expected nodes inside PoseEfxSwitch:
 #   - LandmarkFilterMenu_csv  (Table DAT: key,label,csv)               ← REQUIRED
-#   - PoseEffectsMenu_csv     (Table DAT: key,label,opName,index)      ← OPTIONAL
 #   - effects/                (Base COMP container for PoseEffect_* children)
 #   - out_switch              (Switch TOP)
 #
 # UI parameters on PoseEfxSwitch (Customize Component…):
-#   - ActiveEffect       (Menu)     ← user-facing effect picker
+#   - ActiveEffect       (Menu)     ← user-facing effect picker (values = OP names)
 #   - ActiveIndex        (Int)      ← internal index (hide if you like)
-#   - RebuildEffectsMenu (Pulse)    ← optional manual refresh
+#   - RebuildEffectsMenu (Pulse)    ← manual refresh
 #
 # Initialization:
 #   - Put an Execute DAT *inside* PoseEfxSwitch with:
 #       def onStart(): op('.').ext.PoseEfxSwitchExt.Initialize()
-#
-# Notes:
-#   - Filters (LandmarkFilter/Landmarkfiltercsv) live on each PoseEffect instance.
-#   - LandmarkFilterMenu_csv here is the single source of truth for filter menus.
-#   - Auto-discovery prefers per-effect params if present on each PoseEffect:
-#       Effectkey (Str), Effectlabel (Str), Menuindex (Int)
-#     otherwise derives key/label from the COMP name and order.
 # -----------------------------------------------------------------------------
 
 class PoseEfxSwitchExt:
     def __init__(self, owner):
         self.owner = owner
-        # Re-entrancy guard to prevent ActiveEffect<->ActiveIndex ping-pong
-        self._syncing = False
+        self._syncing = False  # re-entrancy guard
 
     # ===== Lifecycle ==========================================================
     def Initialize(self):
@@ -53,7 +44,7 @@ class PoseEfxSwitchExt:
         self.EnsureLandmarkBindings()
         self.BuildEffectsMenu()
 
-        # Choose initial active effect (by key if present, else first, else index 0)
+        # Choose initial active effect: keep current if valid else first else index 0
         key = (self.owner.par.ActiveEffect.eval() or '').strip()
         keys = self._menuKeys()
         if key in keys:
@@ -65,15 +56,10 @@ class PoseEfxSwitchExt:
 
     # ===== Landmark filter menus (per-effect) =================================
     def InitLandmarkMenus(self):
-        """
-        Stamp LandmarkFilter menu (names/labels) onto each PoseEffect and its
-        child landmarkSelect from LandmarkFilterMenu_csv (key,label,csv).
-        If an effect currently selects a non-custom key with a CSV mapping,
-        seed its Landmarkfiltercsv file param with that default path.
-        """
+        """Stamp LandmarkFilter menu (names/labels) onto PoseEffect and child selector."""
         table = self.owner.op('LandmarkFilterMenu_csv')
         if not table or table.numRows < 2:
-            print("[PoseEfxSwitchExt.InitLandmarkMenus] Missing/empty LandmarkFilterMenu_csv")
+            debug("[PoseEfxSwitchExt.InitLandmarkMenus] Missing/empty LandmarkFilterMenu_csv")
             return
 
         heads = [c.val.lower() for c in table.row(0)]
@@ -82,7 +68,7 @@ class PoseEfxSwitchExt:
             li = heads.index('label')
             ci = heads.index('csv')
         except ValueError:
-            print("[PoseEfxSwitchExt.InitLandmarkMenus] CSV must have columns: key,label,csv")
+            debug("[PoseEfxSwitchExt.InitLandmarkMenus] CSV must have columns: key,label,csv")
             return
 
         keys, labels, csvs = [], [], []
@@ -95,127 +81,71 @@ class PoseEfxSwitchExt:
             csvs.append((r[ci].val or '').strip())
 
         for fx in self._effects():
-            # Stamp menu items on PoseEffect param UI
-            fx.par.LandmarkFilter.menuNames  = keys
-            fx.par.LandmarkFilter.menuLabels = labels
+            # Stamp on PoseEffect parent (SSOT)
+            if hasattr(fx.par, 'LandmarkFilter'):
+                fx.par.LandmarkFilter.menuNames  = keys
+                fx.par.LandmarkFilter.menuLabels = labels
 
-            # Mirror same items on the child selector (value follows via expression)
+            # Mirror menu on child landmarkSelect (value is expression-bound)
             ls = fx.op('landmarkSelect')
-            if ls:
+            if ls and hasattr(ls.par, 'LandmarkFilter'):
                 ls.par.LandmarkFilter.menuNames  = keys
                 ls.par.LandmarkFilter.menuLabels = labels
 
-            # If current key has a default csv (and is not 'custom'), seed file param
-            cur = (fx.par.LandmarkFilter.eval() or '').strip()
+            # Seed default CSV if key has mapping and isn't 'custom'
+            cur = (getattr(fx.par, 'LandmarkFilter', None).eval() if hasattr(fx.par, 'LandmarkFilter') else '') or ''
             if cur in keys and cur != 'custom':
                 idx = keys.index(cur)
                 defcsv = csvs[idx] if idx < len(csvs) else ''
-                if defcsv:
+                if defcsv and hasattr(fx.par, 'Landmarkfiltercsv'):
                     fx.par.Landmarkfiltercsv = defcsv
 
     def EnsureLandmarkBindings(self):
-        """
-        Ensure each landmarkSelect reads its parent PoseEffect parameters via expressions.
-        (We do NOT bind effect params to the switch; filters are per-effect.)
-        """
+        """Ensure landmarkSelect reads parent PoseEffect params via expressions."""
         for fx in self._effects():
             ls = fx.op('landmarkSelect')
             if not ls:
                 continue
-            if not ls.par.LandmarkFilter.expr:
+            if hasattr(ls.par, 'LandmarkFilter') and not ls.par.LandmarkFilter.expr:
                 ls.par.LandmarkFilter.expr = "op('..').par.LandmarkFilter.eval()"
-            if not ls.par.Landmarkfiltercsv.expr:
+            if hasattr(ls.par, 'Landmarkfiltercsv') and not ls.par.Landmarkfiltercsv.expr:
                 ls.par.Landmarkfiltercsv.expr = "op('..').par.Landmarkfiltercsv.eval() or ''"
 
     # ===== Effect menu (ActiveEffect) =========================================
     def BuildEffectsMenu(self):
         """
-        Populate ActiveEffect (menu) from PoseEffectsMenu_csv if present; otherwise
-        auto-discover PoseEffect_* children under ./effects. Also (re)build a local
-        EffectDispatch_csv mapping table with columns: key,label,op,index.
-        Auto-discovery prefers per-effect params: Effectkey, Effectlabel, Menuindex.
+        Auto-discover PoseEffect_* children and build ActiveEffect menu.
+        Values = OP names (stable). Labels = parent.par.UiDisplayName if set,
+        else derived from OP name ("PoseEffect_Dots2" -> "Dots 2").
         """
-        keys, labels, ops, idxs = [], [], [], []
-        cfg = self.owner.op('PoseEffectsMenu_csv')
-
-        def add_row(k, lab, opName, ix):
-            if not k:
-                return
-            keys.append(k)
-            labels.append(lab or k)
-            ops.append(opName or '')
-            try:
-                idxs.append(int(ix))
-            except Exception:
-                idxs.append(len(idxs))  # fallback sequential index
-
-        if cfg and cfg.numRows > 1:
-            heads = [c.val.lower() for c in cfg.row(0)]
-            ki = heads.index('key')    if 'key'    in heads else -1
-            li = heads.index('label')  if 'label'  in heads else -1
-            oi = heads.index('opname') if 'opname' in heads else -1
-            ii = heads.index('index')  if 'index'  in heads else -1
-            rows = cfg.rows()[1:]
-            # Sort by provided 'index' if present and valid
-            try:
-                if ii >= 0:
-                    rows = sorted(rows, key=lambda r: int(r[ii].val))
-            except Exception:
-                pass
-            for r in rows:
-                k   = r[ki].val.strip() if ki >= 0 else ''
-                lab = (r[li].val or '').strip() if li >= 0 else ''
-                opn = (r[oi].val or '').strip() if oi >= 0 else ''
-                ix  = r[ii].val.strip() if ii >= 0 else ''
-                add_row(k, lab, opn, ix)
-        else:
-            # Auto-discover PoseEffect_* children (prefer per-effect params)
-            for i, fx in enumerate(self._effects()):
-                # Prefer per-effect params if present
-                key_par   = getattr(fx.par, 'Effectkey', None)
-                label_par = getattr(fx.par, 'Effectlabel', None)
-                idx_par   = getattr(fx.par, 'Menuindex', None)
-
-                # Derive defaults from name
-                dkey = fx.name.replace('PoseEffect_', '').lower()
-                dlab = dkey.title().replace('_', ' ')
-
-                key = (key_par.eval() if key_par else '') or dkey
-                lab = (label_par.eval() if label_par else '') or dlab
-                try:
-                    ix = int(idx_par.eval()) if idx_par is not None and str(idx_par.eval()).strip() != '' else i
-                except Exception:
-                    ix = i
-
-                add_row(key, lab, fx.name, ix)
-
-            # Keep any explicit Menuindex ordering
-            order = list(range(len(idxs)))
-            try:
-                order = sorted(order, key=lambda j: int(idxs[j]))
-            except Exception:
-                pass
-            keys   = [keys[j]   for j in order]
-            labels = [labels[j] for j in order]
-            ops    = [ops[j]    for j in order]
-            idxs   = [idxs[j]   for j in order]
+        keys, labels = [], []
+        for fx in self._effects():
+            key = fx.name  # OP name is the stable key
+            lab = self._label_for_effect(fx)
+            keys.append(key)
+            labels.append(lab)
 
         # Stamp the UI menu
         self.owner.par.ActiveEffect.menuNames  = keys
         self.owner.par.ActiveEffect.menuLabels = labels
-
-        # Build/update local dispatch table (handy for debugging/inspection)
-        disp = self._ensureDispatchTable()
-        disp.clear()
-        disp.appendRow(['key', 'label', 'op', 'index'])
-        for i in range(len(keys)):
-            disp.appendRow([keys[i], labels[i], ops[i], idxs[i]])
 
         # Keep current selection valid, then push activation
         cur = (self.owner.par.ActiveEffect.eval() or '').strip()
         if cur not in keys and keys:
             self.owner.par.ActiveEffect = keys[0]
         self.OnActiveEffectChanged()
+
+    def _label_for_effect(self, fx):
+        """Prefer PoseEffect.UiDisplayName (non-'Master'), else pretty OP name."""
+        try:
+            p = getattr(fx.par, 'Uidisplayname', None)
+            if p:
+                val = (p.eval() or '').strip()
+                if val and val.lower() != 'master':
+                    return val
+        except Exception:
+            pass
+        return fx.name.replace('PoseEffect_', '').replace('_', ' ').title()
 
     def OnActiveEffectChanged(self):
         """Called when the ActiveEffect (menu) param changes."""
@@ -224,11 +154,9 @@ class PoseEfxSwitchExt:
         self._syncing = True
         try:
             key = (self.owner.par.ActiveEffect.eval() or '').strip()
-            idx = self._indexForKey(key)
-            # Only set ActiveIndex if it actually differs (prevents loops)
+            idx = self._indexForOpName(key)
             if idx is not None and int(self.owner.par.ActiveIndex.eval() or -1) != idx:
                 self.owner.par.ActiveIndex = idx
-            # Activate (idempotent if unchanged)
             self.SetActiveIndex(int(self.owner.par.ActiveIndex.eval() or 0))
         finally:
             self._syncing = False
@@ -240,44 +168,36 @@ class PoseEfxSwitchExt:
         self._syncing = True
         try:
             idx = int(self.owner.par.ActiveIndex.eval() or 0)
-            key = self._keyForIndex(idx) or ''
-            # Only set ActiveEffect if it actually differs (prevents loops)
+            fx  = self._effectAtIndex(idx)
+            key = fx.name if fx else ''
             if key and (self.owner.par.ActiveEffect.eval() or '') != key:
                 self.owner.par.ActiveEffect = key
-            # Activate (idempotent if unchanged)
             self.SetActiveIndex(idx)
         finally:
             self._syncing = False
 
     def SetActiveEffect(self, key: str):
-        """Programmatic activation by menu key (updates both params + activation)."""
+        """Programmatic activation by OP name (updates both params + activation)."""
         key = (key or '').strip()
         keys = self._menuKeys()
         if not keys:
             return
         if key not in keys:
             key = keys[0]
-        # Setting the menu triggers OnActiveEffectChanged(), which syncs the index.
-        self.owner.par.ActiveEffect = key
+        self.owner.par.ActiveEffect = key  # triggers OnActiveEffectChanged
 
     def SetActiveIndex(self, idx: int):
         """
         Activate exactly one PoseEffect_* and route out_switch to that index.
-        Uses the dispatch table to find the opName for the selected index so
-        we gate cooking by the correct COMP even if child order differs.
         """
         # Route output switch
         sw = self.owner.op('out_switch')
         if sw:
             sw.par.index = int(idx)
 
-        # Which opName is active according to dispatch?
-        active_name = self._opNameForIndex(idx)
-
-        # Gate cooking and call SetActive(active)
-        effects = self._effects()
-        for fx in effects:
-            is_active = (fx.name == active_name) if active_name else (effects.index(fx) == idx)
+        # Gate cooking + call SetActive on each effect
+        for i, fx in enumerate(self._effects()):
+            is_active = (i == int(idx))
             fx.allowCooking = is_active
             core = fx.op('fxCore')
             if core:
@@ -285,12 +205,9 @@ class PoseEfxSwitchExt:
             if hasattr(fx.ext, 'PoseEffectMasterExt'):
                 fx.ext.PoseEffectMasterExt.SetActive(is_active)
 
-    # ===== Services for children (csv resolve) =================================
+    # ===== Services for children ==============================================
     def ResolveMenuCSV(self, key: str) -> str:
-        """
-        Given a filter menu key (e.g., 'hands', 'basicpose'), return the default
-        CSV path from LandmarkFilterMenu_csv. Returns '' if not found.
-        """
+        """Given a filter menu key (e.g., 'hands'), return default CSV path."""
         key = (key or '').strip().lower()
         table = self.owner.op('LandmarkFilterMenu_csv')
         if not table or table.numRows < 2:
@@ -312,78 +229,21 @@ class PoseEfxSwitchExt:
         eff = self.owner.op('effects')
         if not eff:
             return []
-        # Only COMPs whose name starts with PoseEffect_
         return [c for c in eff.children if c.isCOMP and c.name.startswith('PoseEffect_')]
 
-    def _ensureDispatchTable(self):
-        """Create or return the local EffectDispatch_csv table."""
-        disp = self.owner.op('EffectDispatch_csv')
-        if not disp:
-            # TD build variations: try class token first, then fallback to string type
-            try:
-                disp = self.owner.create(tableDAT, 'EffectDispatch_csv')  # type: ignore  # noqa
-            except Exception:
-                disp = self.owner.create('tableDAT', 'EffectDispatch_csv')
-        return disp
-
     def _menuKeys(self):
-        """Return the list of menu keys currently set on ActiveEffect."""
-        names = self.owner.par.ActiveEffect.menuNames or []
-        return list(names)
+        """Return menu values (OP names)."""
+        return list(self.owner.par.ActiveEffect.menuNames or [])
 
-    def _indexForKey(self, key):
-        """Lookup numeric index for a given effect key using EffectDispatch_csv."""
-        disp = self.owner.op('EffectDispatch_csv')
-        if not disp or disp.numRows < 2:
-            return None
-        heads = [c.val.lower() for c in disp.row(0)]
-        try:
-            ki = heads.index('key')
-            ii = heads.index('index')
-        except ValueError:
-            return None
-        for r in disp.rows()[1:]:
-            if r[ki].val == key:
-                try:
-                    return int(r[ii].val)
-                except Exception:
-                    return None
+    def _effectAtIndex(self, idx: int):
+        effs = self._effects()
+        if 0 <= idx < len(effs):
+            return effs[idx]
         return None
 
-    def _keyForIndex(self, idx):
-        """Lookup effect key string for a given numeric index."""
-        disp = self.owner.op('EffectDispatch_csv')
-        if not disp or disp.numRows < 2:
-            return ''
-        heads = [c.val.lower() for c in disp.row(0)]
-        try:
-            ki = heads.index('key')
-            ii = heads.index('index')
-        except ValueError:
-            return ''
-        for r in disp.rows()[1:]:
-            try:
-                if int(r[ii].val) == int(idx):
-                    return r[ki].val
-            except Exception:
-                pass
-        return ''
-
-    def _opNameForIndex(self, idx):
-        """Lookup the child COMP name (opName) for a given numeric index."""
-        disp = self.owner.op('EffectDispatch_csv')
-        if not disp or disp.numRows < 2:
-            return ''
-        heads = [c.val.lower() for c in disp.row(0)]
-        try:
-            oi = heads.index('op')
-            ii = heads.index('index')
-        except ValueError:
-            return ''
-        for r in disp.rows()[1:]:
-            try:
-                if int(r[ii].val) == int(idx):
-                    return r[oi].val
-            except Exception:
-                pass
-        return ''
+    def _indexForOpName(self, name: str):
+        effs = self._effects()
+        for i, fx in enumerate(effs):
+            if fx.name == name:
+                return i
+        return None

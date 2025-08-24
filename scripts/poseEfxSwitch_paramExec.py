@@ -1,7 +1,6 @@
-
 # PoseEfxSwitch / parexec1 (Parameter Execute DAT callbacks)
 
-# Canvas defaults that should trigger a guarded meta rebuild
+# Canvas defaults that should trigger a guarded meta rebuild (if you use one)
 CANVAS_PARAMS = {'Defaultcanvasw', 'Defaultcanvash'}
 
 # Optional pulse param name to force a manual refresh
@@ -26,13 +25,12 @@ def onValueChange(par, prev):
     if par.name in CANVAS_PARAMS:
         _update_guard()
 
-    # 2) Existing PoseEfxSwitch behaviors
+    # 2) Switch behaviors
     if par.name == 'ActiveEffect':
         op('.').ext.PoseEfxSwitchExt.OnActiveEffectChanged()
     elif par.name == 'ActiveIndex':
         op('.').ext.PoseEfxSwitchExt.OnActiveIndexChanged()
     elif par.name == 'RebuildEffectsMenu':
-        # If this is a toggle/bool instead of a pulse, handle it here too
         op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
     return True
 
@@ -41,11 +39,9 @@ def onPulse(par):
     if par is None:
         return True
 
-    # Allow a manual refresh
     if par.name == REFRESH_PULSE:
         _update_guard()
 
-    # If RebuildEffectsMenu is a pulse param, handle it here as well
     if par.name == 'RebuildEffectsMenu':
         op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
 
@@ -58,7 +54,6 @@ def onExpressionChange(par, prev):
     return True
 
 def onExportChange(par, prev):
-    # Not strictly needed for this use, but safe to keep symmetrical behavior
     if par and par.name in CANVAS_PARAMS:
         _update_guard()
     return True
