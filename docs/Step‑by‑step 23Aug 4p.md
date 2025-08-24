@@ -2,6 +2,71 @@ Here’s a tight, copy‑pasteable plan + code to make this work end‑to‑end.
 
 # Step‑by‑step 23Aug 4p
 
+## 0. update
+
+Great question. Let’s clarify how **custom parameters** (like `ColorType`, `DotSize`, etc.) should be organized inside **fxCore** and **PoseEffect** in TouchDesigner, and whether the **page name** matters when scripts/UI builders access them.
+
+------
+
+### 0.1. Where to place custom parameters
+
+- **fxCore COMP (inside each PoseEffect)**
+  - Define **effect-specific controls** (e.g., `UiColor`, `UiDotSize`, `UiColorMode`, `UiOpacity`).
+  - Add them on a **new custom page**, often called something like **“Effect Params”** or **“Style”**, for clarity.
+  - These are what get surfaced to the **UI Builder** and OSC ShowControl.
+- **PoseEffect (the parent COMP of fxCore)**
+  - Typically carries only **shared filter params** (`LandmarkFilter`, `Landmarkfiltercsv`) and any metadata controls.
+  - Most of the user-facing controls live on `fxCore`, since they are effect-specific.
+
+------
+
+### 0.2. Does the **page name** matter?
+
+- **No.**
+   In TD, when you access a parameter via Python (`op('fxCore').par.DotSize`), the **page name is irrelevant**. What matters is the **parameter’s internal name**.
+- Scripts like your **UI Builder** (`fx_ui_builder.py`) and **ShowControl dispatcher** look up parameters either:
+  - by explicit name from `expose_params` DAT, or
+  - by prefix (e.g., `Ui*`).
+- That means you can organize parameters into pages however makes sense for humans (e.g., “Effect Params”, “Style”, “Filter”), and it won’t break discovery.
+
+------
+
+### 0.3. Recommended conventions
+
+- Put effect-specific pars in a **dedicated page** inside `fxCore`, e.g.:
+  - Page = **Effect Params** or **Style**
+     Pars = `UiColor`, `UiDotSize`, `UiColorMode`, `UiOpacity`
+- Keep the names stable (`UiColor`, `UiDotSize`, etc.), since those are what ShowControl and UI Builder scripts discover.
+- Optionally add an **expose_params** DAT listing the names, so you’re not relying only on prefixes.
+
+------
+
+### 0.4. Example
+
+Inside `PoseEffect_Dots/fxCore`:
+
+- Page: **Effect Params**
+  - `UiColor` (RGB)
+  - `UiDotSize` (Float)
+  - `UiColorMode` (Menu: Fixed/Random)
+  - `UiOpacity` (Float)
+
+Inside `PoseEffect_Dots` (parent):
+
+- Page: **Filter**
+  - `LandmarkFilter` (Menu)
+  - `Landmarkfiltercsv` (File)
+
+------
+
+✅ **Answer:**
+ Yes, create a clean page like **Effect Params** in `fxCore` (and **Filter** in PoseEffect).
+ No, the **page name itself doesn’t affect code**—lookup is always by `op.par.<name>`. The page is just for human organization.
+
+---
+
+
+
 ## 1) Master: add `expose_params` in `PoseEffectMASTER/fxCore`
 
 - Dive into `PoseEffectMASTER/fxCore`.

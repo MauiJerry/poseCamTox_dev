@@ -14,6 +14,11 @@ at this point, the poseCam_Dev.toe is a blank TD project.
 first step will be to get it all into git. ... maybe github.
 then wire up the scripts per docs/WIRING.md
 ---
+this notes.txt file and a series of md files ./docs are included in the git
+some of the md files are used by the td project as external files
+some are outputs of the Chat as the project evolves, these will be deleted and live on only in the git repo once done or outdated
+
+---
 
 using a flat structure but in initial commit there is a td folder with contents
 likely this wll be removed shortly.
