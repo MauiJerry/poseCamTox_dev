@@ -100,4 +100,8 @@ write up a stepByStep guide to implementing  (note actual names may have differe
 sent that to Chat and got back what is in "Step-by-step 23Aug 4p.md" into which i will make notes as things changes
 
 ---
-
+ok i followed directions in 5pm doc 
+oh wait, i didnt build the UIBuilder stuff
+but running the toe i dont see messages.  maybe exit and restart
+gotta do it anyway as its time to go be social
+---

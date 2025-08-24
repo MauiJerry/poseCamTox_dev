@@ -1,167 +1,187 @@
+# PoseEffect_Dots.py
+# Script CHOP for PoseEffect_Dots / fxCore
+# Input 0: single-person skeleton CHOP with channels like "<name>_x", "<name>_y" in UV [0..1]
+# Optional meta sources (priority):
+#   1) inMeta Table DAT inside fxCore: rows: image_width|value, image_height|value, aspect|value
+#   2) Input 1 CHOP with channels image_width, image_height
+#   3) CanvasW / CanvasH custom parameters on fxCore
+#
+# Visual params (fxCore custom parameters; 'Ui' prefix is fine too):
+#   - ColorType  (menu: 'solid' | 'random')    # also accepts ColorMode ('Fixed'|'RandomPerLandmark')
+#   - Color      (RGB or RGBA)
+#   - DotSize    (float, pixels)
+# Optional extras supported if present:
+#   - Opacity (float 0..1)   # if not present, alpha comes from Color[3] or defaults to 1
+#   - Origin  (menu UV_0_1 | NDC_-1_1), default UV_0_1
+#   - CanvasW / CanvasH (ints) used as fallback if meta missing
 
-'''
-oseEffect_Dots — Script CHOP code + fxCore wiring
+import hashlib
 
-Below is a drop‑in Script CHOP for the PoseEffect_Dots/fxCore/landmark_to_instances node.
-It consumes a single‑person skeleton CHOP (channels like head_x, head_y, head_z, …) and produces per‑instance channels for a GEO instancing rig:
-
-tx, ty (position in NDC)
-
-scale (uniform instancing scale for pixel‑sized dots)
-
-r, g, b, a (per‑instance color)
-
-Assumptions:
-• The fxCore component has custom pars: Origin (UV_0_1|NDC_-1_1), CanvasW, CanvasH, ColorMode (Fixed|RandomPerLandmark), Color (RGBA), Opacity, DotSize.
-• CHOP input 0 is the single‑person skeleton (from your PersonRouter).
-• Optional CHOP input 1 provides meta channels image_width, image_height.
-• You’ll wire the produced channels into a Geometry COMP set to Instance using this Script CHOP.
-
-fxCore/
-  CHOP In (0): skeleton_in     # from PersonRouter (single person)
-  CHOP In (1): meta_in         # optional: image_width, image_height
-  Null CHOP: null_skel         # pass-through of skeleton_in
-  Switch CHOP: meta_mux        # meta_in if connected else Constant
-  Constant CHOP: meta_fallback # image_width/height from CanvasW/H pars
-  Script CHOP: landmark_to_instances  # code above (inputs: null_skel, meta_mux)
-  Rectangle SOP: dot_rect      # unit quad
-  Geometry COMP: dot_geo
-      - Instance OP = landmark_to_instances
-      - Instance Translate X = tx
-      - Instance Translate Y = ty
-      - Instance Uniform Scale = scale
-  Constant MAT: dot_mat
-      - Enable Blending (Over or Add)
-      - Color from instancing: toggle "Use Point Color" (or bind to r/g/b/a)
-  Camera COMP: cam
-      - Orthographic, width = 2 (to match NDC)
-  Render TOP: render1 (cam + dot_geo)
-  Out TOP: out_color
-  
-  landmark_to_instances (Script CHOP) — cook() implementation
-
-  '''
-  
-# PoseEffect_Dots / fxCore / landmark_to_instances (Script CHOP)
-# Builds instancing attributes from a single-person skeleton CHOP.
-
-import math, hashlib
+# ---------- helpers ----------
 
 def _fx():
-    # The fxCore COMP (parent of this Script CHOP)
     return parent()
 
-def _par_val(name, default=None):
-    # Case-insensitive accessor for custom pars (CanvasH vs Canvash, etc.)
+def _get_par_case_insensitive(name, default=None):
     core = _fx()
-    for p in core.customPars:
-        if p.name.lower() == name.lower():
-            try:  # try tuple first (e.g., Color RGBA)
-                return p.eval() if p.tupletSize == 1 else tuple(p.eval())
-            except:
-                return p.eval()
+    # direct attribute first (fast path)
+    p = getattr(core.par, name, None)
+    if p is not None:
+        return p
+    # case-insensitive scan
+    lname = name.lower()
+    for cp in core.customPars:
+        if cp.name.lower() == lname:
+            return cp
     return default
 
-def _meta_dim(dim_name, fallback):
-    # If meta CHOP (input 1) has image_{width,height}, use those; else fallback parm
-    if len(scriptOP.inputs) >= 2 and scriptOP.inputs[1] is not None:
-        meta = scriptOP.inputs[1]
-        ch = meta.chan(dim_name)
-        if ch and ch.numSamples > 0:
-            return max(1, int(ch[0]))
+def _eval_par_value(name, default=None):
+    p = _get_par_case_insensitive(name)
+    if not p:
+        return default
+    try:
+        # tuple vs scalar
+        if getattr(p, 'tupletSize', 1) > 1:
+            return tuple(p.eval())
+        return p.eval()
+    except Exception:
+        try:
+            return p.eval()
+        except Exception:
+            return default
+
+def _meta_from_inMeta(row_name, fallback):
+    """Read numeric value from local inMeta Table DAT (rows: name | value)."""
+    try:
+        meta = op('inMeta')
+        if not meta or not meta.isDAT:
+            return int(fallback)
+        cell = meta[row_name, 'value']
+        if not cell or cell.val.strip() == '':
+            return int(fallback)
+        return max(1, int(float(cell.val)))
+    except Exception:
+        return int(fallback)
+
+def _meta_from_input_chop(chop_input, chan_name, fallback):
+    try:
+        if chop_input:
+            ch = chop_input.chan(chan_name)
+            if ch and ch.numSamples > 0:
+                return max(1, int(float(ch[0])))
+    except Exception:
+        pass
     return int(fallback)
 
+def _image_dims(scriptOP):
+    """image_width/height: inMeta DAT → input1 CHOP → CanvasW/H params → safe defaults."""
+    # 1) inMeta DAT
+    cw = _eval_par_value('CanvasW', 1280)
+    ch = _eval_par_value('CanvasH', 720)
+    w = _meta_from_inMeta('image_width',  cw if cw is not None else 1280)
+    h = _meta_from_inMeta('image_height', ch if ch is not None else 720)
+
+    # 2) CHOP input 1 (override if present)
+    if len(scriptOP.inputs) >= 2 and scriptOP.inputs[1] is not None:
+        w = _meta_from_input_chop(scriptOP.inputs[1], 'image_width',  w)
+        h = _meta_from_input_chop(scriptOP.inputs[1], 'image_height', h)
+
+    # 3) final guard
+    return max(1, int(w)), max(1, int(h))
+
 def _uv_to_ndc(x, y):
-    # Convert UV [0..1] to NDC [-1..1] with Y-up
+    """UV [0..1] → NDC [-1..1], Y up."""
     return (x * 2.0 - 1.0, (1.0 - y) * 2.0 - 1.0)
 
 def _hash_color(name):
-    # Deterministic pseudo-random color per landmark name (pastel-ish)
+    """Deterministic pastel color per landmark base name."""
     h = hashlib.md5(name.encode('utf8')).digest()
     r = (h[0] / 255.0) * 0.7 + 0.3
     g = (h[1] / 255.0) * 0.7 + 0.3
     b = (h[2] / 255.0) * 0.7 + 0.3
     return (r, g, b)
 
+# ---------- main ----------
+
 def cook(scriptOP):
     scriptOP.clear()
 
-    # --- Inputs & config ---
-    skel = scriptOP.inputs[0] if scriptOP.numInputs >= 1 else None
-    if skel is None or skel.numChans == 0:
-        return  # nothing to do
+    # Input 0 (skeleton)
+    skel = scriptOP.inputs[0] if (len(scriptOP.inputs) >= 1 and scriptOP.inputs[0] is not None) else None
+    if not skel or skel.numChans == 0:
+        return
 
-    origin = (_par_val('Origin', 'UV_0_1') or 'UV_0_1').upper()
-    canvas_w = _meta_dim('image_width',  _par_val('CanvasW', 1280))
-    canvas_h = _meta_dim('image_height', _par_val('CanvasH', 720))
+    # Meta dims (from inMeta DAT / input1 CHOP / CanvasW,H)
+    img_w, img_h = _image_dims(scriptOP)
 
-    colorMode = (_par_val('ColorMode', 'Fixed') or 'Fixed').upper()
-    baseColor = _par_val('Color', (1.0, 1.0, 1.0, 1.0))
-    opacity   = float(_par_val('Opacity', 1.0))
-    dotSizePx = float(_par_val('DotSize', 8.0))
+    # Origin handling
+    origin = str(_eval_par_value('Origin', 'UV_0_1') or 'UV_0_1').upper()
 
-    # --- Derive landmark base names from *_x channels ---
-    # A landmark is present if we have <name>_x and <name>_y (z is optional/confidence)
-    lm_names = []
+    # Visual params (read both new + legacy names)
+    color_type = str(_eval_par_value('ColorType', None) or _eval_par_value('ColorMode', 'solid')).strip().lower()
+    # Normalize to 'solid' | 'random'
+    if color_type in ('fixed', 'solid', 'solidcolor'):
+        color_type = 'solid'
+    elif color_type in ('randomperlandmark', 'rand', 'random'):
+        color_type = 'random'
+    else:
+        color_type = 'solid'
+
+    base_color = _eval_par_value('Color', (1.0, 1.0, 1.0))  # RGB or RGBA
+    opacity    = float(_eval_par_value('Opacity', 1.0))
+    dot_size   = float(_eval_par_value('DotSize', 8.0))     # pixels
+
+    # Collect landmark base names from *_x/*_y pairs
+    names = []
     for ch in skel.chans():
         nm = ch.name
         if nm.endswith('_x'):
             base = nm[:-2]
-            if skel.chan(base + '_y') is not None:  # must have y
-                lm_names.append(base)
-
-    lm_names.sort()  # stable ordering (optional)
-    n = len(lm_names)
+            if skel.chan(base + '_y') is not None:
+                names.append(base)
+    names.sort()
+    n = len(names)
     if n == 0:
         return
 
-    # Each sample corresponds to one instance
+    # Prepare output channels
     scriptOP.numSamples = n
+    tx = scriptOP.appendChan('tx')
+    ty = scriptOP.appendChan('ty')
+    sc = scriptOP.appendChan('scale')
+    rc = scriptOP.appendChan('r')
+    gc = scriptOP.appendChan('g')
+    bc = scriptOP.appendChan('b')
+    ac = scriptOP.appendChan('a')
 
-    # Create output channels
-    tx   = scriptOP.appendChan('tx')
-    ty   = scriptOP.appendChan('ty')
-    scl  = scriptOP.appendChan('scale')  # uniform instancing scale
-    rch  = scriptOP.appendChan('r')
-    gch  = scriptOP.appendChan('g')
-    bch  = scriptOP.appendChan('b')
-    ach  = scriptOP.appendChan('a')
+    # Pixel→NDC scale (ortho camera width=2)
+    pixel_to_ndc = 2.0 / float(max(1, img_h))
+    inst_scale   = float(dot_size) * pixel_to_ndc
 
-    # Compute per-pixel scale in NDC (orthographic camera width=2)
-    # Pixel height in NDC ≈ 2/canvas_h. We want 'dotSizePx' pixels.
-    pixel_to_ndc = 2.0 / max(1.0, float(canvas_h))
-    per_inst_scale = dotSizePx * pixel_to_ndc
+    # Unpack base color
+    if isinstance(base_color, (tuple, list)):
+        br = float(base_color[0] if len(base_color) > 0 else 1.0)
+        bg = float(base_color[1] if len(base_color) > 1 else 1.0)
+        bb = float(base_color[2] if len(base_color) > 2 else 1.0)
+        ba = float(base_color[3] if len(base_color) > 3 else opacity)
+    else:
+        br, bg, bb, ba = 1.0, 1.0, 1.0, opacity
 
-    # Output per landmark
-    for i, base in enumerate(lm_names):
+    # Emit per landmark
+    for i, base in enumerate(names):
         x = skel[base + '_x'][0] if skel.chan(base + '_x') else 0.5
         y = skel[base + '_y'][0] if skel.chan(base + '_y') else 0.5
-
         if origin.startswith('UV'):
             X, Y = _uv_to_ndc(float(x), float(y))
         else:
-            # assume already NDC
             X, Y = float(x), float(y)
 
-        tx[i] = X
-        ty[i] = Y
-        scl[i] = per_inst_scale
+        tx[i], ty[i], sc[i] = X, Y, inst_scale
 
-        if colorMode.startswith('RANDOM'):
-            cr, cg, cb = _hash_color(base)
-            rch[i], gch[i], bch[i] = cr, cg, cb
-            ach[i] = opacity
+        if color_type == 'random':
+            r, g, b = _hash_color(base)
+            rc[i], gc[i], bc[i], ac[i] = r, g, b, 1.0
         else:
-            # Fixed color (RGB[A]); TD RGB custom par yields a 3‑tuple,
-            # RGBA may yield 4; fall back to opacity for alpha if not provided.
-            if isinstance(baseColor, (tuple, list)):
-                cr = float(baseColor[0]) if len(baseColor) > 0 else 1.0
-                cg = float(baseColor[1]) if len(baseColor) > 1 else 1.0
-                cb = float(baseColor[2]) if len(baseColor) > 2 else 1.0
-                ca = float(baseColor[3]) if len(baseColor) > 3 else opacity
-            else:
-                cr, cg, cb, ca = 1.0, 1.0, 1.0, opacity
-            rch[i], gch[i], bch[i], ach[i] = cr, cg, cb, ca
+            rc[i], gc[i], bc[i], ac[i] = br, bg, bb, ba
 
     return
-
