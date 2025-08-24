@@ -1,6 +1,9 @@
 # PoseEfxSwitch / parexec1 (Parameter Execute DAT callbacks)
 
 # Canvas defaults that should trigger a guarded meta rebuild (if you use one)
+from multiprocessing.util import debug
+
+
 CANVAS_PARAMS = {'Defaultcanvasw', 'Defaultcanvash'}
 
 # Optional pulse param name to force a manual refresh
@@ -39,6 +42,8 @@ def onPulse(par):
     if par is None:
         return True
 
+    debug(f'[parexec1] onPulse: {par.name}')
+    
     if par.name == REFRESH_PULSE:
         _update_guard()
 

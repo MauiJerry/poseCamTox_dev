@@ -104,6 +104,7 @@ def _hash_color(name):
 # ---------- main ----------
 
 def cook(scriptOP):
+    debug("PoseEffect_Dots onCook")
     scriptOP.clear()
 
     # Input 0 (skeleton)

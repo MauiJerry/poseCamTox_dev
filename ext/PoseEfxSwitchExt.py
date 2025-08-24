@@ -34,12 +34,16 @@
 
 class PoseEfxSwitchExt:
     def __init__(self, owner):
+        debug("db init PoseEfxSwitchExt")
+        print("pr init PoseEfxSwitchExt")
         self.owner = owner
         self._syncing = False  # re-entrancy guard
 
     # ===== Lifecycle ==========================================================
     def Initialize(self):
         """Called by the embedded Execute DAT on project start."""
+        debug("db Initialize PoseEfxSwitchExt")
+        print("pr Initialize PoseEfxSwitchExt")
         self.InitLandmarkMenus()
         self.EnsureLandmarkBindings()
         self.BuildEffectsMenu()
@@ -118,6 +122,8 @@ class PoseEfxSwitchExt:
         Values = OP names (stable). Labels = parent.par.UiDisplayName if set,
         else derived from OP name ("PoseEffect_Dots2" -> "Dots 2").
         """
+        debug("db BuildEffectsMenu PoseEfxSwitchExt")
+        print("pr InitiBBuildEffectsMenuuildEffectsMenualize PoseEfxSwitchExt")
         keys, labels = [], []
         for fx in self._effects():
             key = fx.name  # OP name is the stable key

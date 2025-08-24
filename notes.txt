@@ -105,3 +105,5 @@ oh wait, i didnt build the UIBuilder stuff
 but running the toe i dont see messages.  maybe exit and restart
 gotta do it anyway as its time to go be social
 ---
+ok, enough with Chat and Architecture refactors
+back to using print() and debug() to trace actions and Debug

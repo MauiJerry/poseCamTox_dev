@@ -73,7 +73,8 @@ def _safe_aspect(w, h):
 
 def update_guard():
     """Merge upstream meta with defaults; ensure image_width, image_height, aspect."""
-    # print('update_guard() called')
+    print('update_guard() called')
+    debug('db update_guard() called')
     comp = _comp()
     targetOp = _op(TARGET_OP)
     sourceOp = _op('inMeta')

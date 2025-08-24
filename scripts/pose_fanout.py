@@ -243,6 +243,7 @@ def _set_text_dat(name, text):
 
 # --- Main --------------------------------------------------------------------
 def onCook(scriptOp):
+    # debug("pose_fanout onCook")
     scriptOp.clear()
     osc_dat = _op_lookup(OSC_IN_DAT_NAME)
     if not osc_dat or _nrows(osc_dat) <= 0:

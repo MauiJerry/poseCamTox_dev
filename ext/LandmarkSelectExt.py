@@ -3,6 +3,8 @@
 
 class LandmarkSelectExt:
     def __init__(self, owner):
+        debug("db init landmarkSelectExt")
+        print("pr init landmarkSelectExt")
         self.owner = owner
 
     def Rebuild(self):

@@ -1,4 +1,7 @@
+#from doctest import debug
+
 def onCook(scriptOp):
+    debug("person_select onCook")
     scriptOp.clear()
 
     comp = scriptOp.parent()

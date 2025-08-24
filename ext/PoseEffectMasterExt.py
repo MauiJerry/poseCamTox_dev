@@ -4,6 +4,8 @@
 
 class PoseEffectMasterExt:
     def __init__(self, owner):
+        debug("db init PoseEffectMasterExt")
+        print("pr init PoseEffectMasterExt")
         self.owner = owner
 
     # ===== Activation & lifecycle ============================================
