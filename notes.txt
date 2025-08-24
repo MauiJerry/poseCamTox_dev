@@ -77,3 +77,22 @@ C:/Users/isdal/AppData/Local/Programs/Microsoft VS Code/Code.exe
 just set it back
 ---
 almost there 730p
+---
+23 Aug,  didnt finish last nite. 
+Realized there are a few architectural things before I actually implment Dots (although initial code for that was provided by ChatGPT)
+
+*) add expose_params Table DAT in PoseEffectMaster;s fxCore. It defines what Custome Parameters of fxCore are for UI and EfxSwitch to find initial contents:
+	UiLandmarkFilter	All
+	DisplayName	MASTER
+
+*) add parameter DisplayName to PoseEffectMaster/fxCore, promote it for the UI and have EfxSwitch use this when building menu
+
+write up a stepByStep guide to implementing  (note actual names may have different case)
+- expose_params in PoseEffectMaster/fxCore (default contents: {UiDisplayName,  "Master"}, {UiLandmarkFilter, "All"} ); use it in EfxSwitch when building the menu and UI panel. 
+- show the UIBuilder code that walks the effects object, collecting PoseEffect menu items; uiBuilder should also invoke PoseEfxSwitch.RebuiltEffectsMenu.  The param values in Master/fxCore should be noted and if the clone has those values, then auto-derive the UiDisplayName from the op name.
+- creating Dots effect by cloning MASTER and making changes to params and ops inside, esp fxCore.  I have code for fxCore_Dots_landmark_to_instances.py ;  three expose_params (ColorType, Color, DotSize, LandmarkFilterType) for fxCore or the parent PoseEffect_clone
+- copy that effect so there are two Dots with different starting params named in menu with default name
+sent that to Chat and got back what is in "Step-by-step 23Aug 4p.md" into which i will make notes as things changes
+
+---
+
