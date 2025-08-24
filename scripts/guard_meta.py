@@ -27,10 +27,12 @@ def _upsert(t, key, value):
         if t[r,0].val == key:
             if t[r,1].val != sval:
                 t[r,1].val = sval
-                print("guard_meta upsert Updated:", key, "->", sval)
-            return
+                #debug("guard_meta upsert Updated:", key, "->", sval)
+                return True
+            else :
+                return False
     t.appendRow([key, sval])
-    print("guard_meta Inserted:", key, "->", sval)
+    #debug("guard_meta Inserted:", key, "->", sval)
 
 def _read_upstream(d):
     """Return dict from a 2-col key/value table (header tolerant)."""
@@ -73,8 +75,7 @@ def _safe_aspect(w, h):
 
 def update_guard():
     """Merge upstream meta with defaults; ensure image_width, image_height, aspect."""
-    print('update_guard() called')
-    debug('db update_guard() called')
+    #debug('db update_guard() called')
     comp = _comp()
     targetOp = _op(TARGET_OP)
     sourceOp = _op('inMeta')

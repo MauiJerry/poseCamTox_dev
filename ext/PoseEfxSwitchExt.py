@@ -61,6 +61,7 @@ class PoseEfxSwitchExt:
     # ===== Landmark filter menus (per-effect) =================================
     def InitLandmarkMenus(self):
         """Stamp LandmarkFilter menu (names/labels) onto PoseEffect and child selector."""
+        debug("db InitLandmarkMenus PoseEfxSwitchExt")
         table = self.owner.op('LandmarkFilterMenu_csv')
         if not table or table.numRows < 2:
             debug("[PoseEfxSwitchExt.InitLandmarkMenus] Missing/empty LandmarkFilterMenu_csv")
@@ -106,6 +107,8 @@ class PoseEfxSwitchExt:
 
     def EnsureLandmarkBindings(self):
         """Ensure landmarkSelect reads parent PoseEffect params via expressions."""
+        debug("db EnsureLandmarkBindings PoseEfxSwitchExt")
+        
         for fx in self._effects():
             ls = fx.op('landmarkSelect')
             if not ls:
@@ -155,6 +158,7 @@ class PoseEfxSwitchExt:
 
     def OnActiveEffectChanged(self):
         """Called when the ActiveEffect (menu) param changes."""
+        debug("db OnActiveEffectChanged PoseEfxSwitchExt")
         if self._syncing:
             return
         self._syncing = True
@@ -169,6 +173,7 @@ class PoseEfxSwitchExt:
 
     def OnActiveIndexChanged(self):
         """Called when the ActiveIndex (int) param changes."""
+        debug("db OnActiveIndexChanged PoseEfxSwitchExt")
         if self._syncing:
             return
         self._syncing = True
@@ -184,6 +189,7 @@ class PoseEfxSwitchExt:
 
     def SetActiveEffect(self, key: str):
         """Programmatic activation by OP name (updates both params + activation)."""
+        debug("db SetActiveEffect PoseEfxSwitchExt", key)
         key = (key or '').strip()
         keys = self._menuKeys()
         if not keys:
@@ -196,6 +202,7 @@ class PoseEfxSwitchExt:
         """
         Activate exactly one PoseEffect_* and route out_switch to that index.
         """
+        debug("db SetActiveIndex PoseEfxSwitchExt", idx)
         # Route output switch
         sw = self.owner.op('out_switch')
         if sw:
@@ -214,6 +221,7 @@ class PoseEfxSwitchExt:
     # ===== Services for children ==============================================
     def ResolveMenuCSV(self, key: str) -> str:
         """Given a filter menu key (e.g., 'hands'), return default CSV path."""
+        debug("db ResolveMenuCSV PoseEfxSwitchExt", key)
         key = (key or '').strip().lower()
         table = self.owner.op('LandmarkFilterMenu_csv')
         if not table or table.numRows < 2:

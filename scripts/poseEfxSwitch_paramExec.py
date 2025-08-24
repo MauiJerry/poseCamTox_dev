@@ -1,8 +1,6 @@
 # PoseEfxSwitch / parexec1 (Parameter Execute DAT callbacks)
 
 # Canvas defaults that should trigger a guarded meta rebuild (if you use one)
-from multiprocessing.util import debug
-
 
 CANVAS_PARAMS = {'Defaultcanvasw', 'Defaultcanvash'}
 
@@ -21,6 +19,9 @@ def _update_guard():
 
 def onValueChange(par, prev):
     """Called when any watched parameter's value changes."""
+    
+    debug(f'[parexec1] onValueChange: {par.name} from {prev} to {par.eval()}')
+    
     if par is None:
         return True
 
