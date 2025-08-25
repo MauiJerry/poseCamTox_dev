@@ -56,6 +56,8 @@ def onPulse(par):
     """Called when any watched pulse parameter is pressed."""
     if par is None:
         return True
+    
+    # use this for compare in case we mucked up capitalization of Parameter names
     name_l = _norm(getattr(par, 'tupletName', '') or par.name)
 
     debug(f'[parexec1] onPulse: {par.name} {name_l}')
@@ -67,7 +69,7 @@ def onPulse(par):
     if name_l == 'rebuildeffectsmenu':
         op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
 
-    if par.name == 'scanlandmarkmasks':
+    if name_l == 'scanlandmarkmasks':
         op('.').ext.PoseEfxSwitchExt.ScanAndBuildMaskMenu()
 
     return True
