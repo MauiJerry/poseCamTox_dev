@@ -134,11 +134,34 @@ class LandmarkSelectExt:
         final = _dedup_preserve_order(channels)
         
         # Step 4: Write pattern into Select CHOP
-        selectCHOP.par.op = '../in1'  # ensure it targets upstream CHOP In
-        selectCHOP.par.channame = ' '.join(final)
+        debug(f"[Rebuild] Writing pattern to Select CHOP ({selectCHOP.name}): {final}")
+        selectCHOP = self.owner.op('select1')
+        if not selectCHOP:
+            self._log("[Rebuild] ERROR: missing Select CHOP 'select1'.")
+            return
 
-        self._log(f"[Rebuild] Built {len(final)} channel patterns "
-                  f"(mode='{mode}', person={pid}).")
+        # Prefer a wired input. If present, clear the CHOP param so the wire is used.
+        if selectCHOP.inputs and len(selectCHOP.inputs) > 0:
+            if selectCHOP.par.chop.eval() != '':
+                selectCHOP.par.chop = ''  # let the wire drive the source
+        else:
+            # Fall back to a named source
+            src = self.owner.parent().op('in1') or self.owner.op('in1')
+            if src:
+                selectCHOP.par.chop = src.path
+            else:
+                self._log("[Rebuild] WARNING: no wired input and no '../in1' found.")
+                return  # nothing to select from
+
+        # Write channel patterns — NOTE: parameter is 'channames' (plural)
+        new_pattern = ' '.join(final)  # final is your expanded list like ['head_x','head_y',...]
+        if selectCHOP.par.channames.eval() != new_pattern:
+            selectCHOP.par.channames = new_pattern
+        src = self.owner.parent().op('in1') or self.owner.parent().op('inCHOP')
+
+        # was: person={pid} (remove person; it’s stripped upstream now)
+        self._log(f"[Rebuild] Built {len(final)} channel patterns (mode='{mode}').")
+
 
     # ------------------------------
     # Helpers (table reads / transforms)

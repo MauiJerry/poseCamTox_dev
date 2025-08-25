@@ -2,9 +2,38 @@
 # Lives on each PoseEffect_* (including the Master). Handles activation, bypass policy,
 # and tells the child landmarkSelect to rebuild when needed.
 
+def _debug(owner, msg):
+    # won't crash if there's no logger; prints component path for clarity
+    try:
+        log = owner.op('log')
+        (log.write if hasattr(log, 'write') else print)(f"[{owner.path}] {msg}\n")
+    except Exception:
+        print(f"[{owner.path}] {msg}")
+
 class PoseEffectMasterExt:
     def __init__(self, owner):
         self.owner = owner
+
+    def OnStart(self):
+        _debug(self.owner, "OnStart()")
+        # Ensure child bindings exist (so LandmarkSelect params show grey/expr‑driven)
+        self._ensure_landmark_bindings()
+        # Do one filter apply to populate select1.channame right away
+        self.ApplyFilter()
+
+    def _ensure_landmark_bindings(self):
+        ls = self.owner.op('landmarkSelect')
+        if not ls:
+            _debug(self.owner, "No landmarkSelect child found.")
+            return
+        try:
+            if not ls.par.LandmarkFilter.expr:
+                ls.par.LandmarkFilter.expr = "op('..').par.LandmarkFilter.eval()"
+            if not ls.par.Landmarkfiltercsv.expr:
+                ls.par.Landmarkfiltercsv.expr = "op('..').par.Landmarkfiltercsv.eval() or ''"
+        except Exception as e:
+            _debug(self.owner, f"_ensure_landmark_bindings: {e}")
+
 
     def SetActive(self, active: bool):
         """Called by PoseEfxSwitch when this effect becomes (in)active."""
