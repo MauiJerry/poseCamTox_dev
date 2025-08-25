@@ -7,7 +7,7 @@
 # Responsibilities (finalized 23 Aug):
 #   • Build the ActiveEffect menu labels from PoseEffect parent.par.UiDisplayName
 #     (fall back to pretty OP name). Menu values remain stable keys (OP names).
-#   • Keep ActiveEffect (menu) and ActiveIndex (int) in sync WITHOUT loops.
+#   • Keep ActiveEffect (menu) and Activeindex (int) in sync WITHOUT loops.
 #   • Activate exactly one PoseEffect_*:
 #       - Route out_switch.index
 #       - fx.allowCooking  = True for active, False for others
@@ -24,7 +24,7 @@
 #
 # UI parameters on PoseEfxSwitch (Customize Component…):
 #   - ActiveEffect       (Menu)     ← user-facing effect picker (values = OP names)
-#   - ActiveIndex        (Int)      ← internal index (hide if you like)
+#   - Activeindex        (Int)      ← internal index (hide if you like)
 #   - RebuildEffectsMenu (Pulse)    ← manual refresh
 #
 # Initialization:
@@ -35,7 +35,6 @@
 class PoseEfxSwitchExt:
     def __init__(self, owner):
         debug("db init PoseEfxSwitchExt")
-        print("pr init PoseEfxSwitchExt")
         self.owner = owner
         self._syncing = False  # re-entrancy guard
 
@@ -43,7 +42,6 @@ class PoseEfxSwitchExt:
     def Initialize(self):
         """Called by the embedded Execute DAT on project start."""
         debug("db Initialize PoseEfxSwitchExt")
-        print("pr Initialize PoseEfxSwitchExt")
         self.InitLandmarkMenus()
         self.EnsureLandmarkBindings()
         self.BuildEffectsMenu()
@@ -126,7 +124,6 @@ class PoseEfxSwitchExt:
         else derived from OP name ("PoseEffect_Dots2" -> "Dots 2").
         """
         debug("db BuildEffectsMenu PoseEfxSwitchExt")
-        print("pr InitiBBuildEffectsMenuuildEffectsMenualize PoseEfxSwitchExt")
         keys, labels = [], []
         for fx in self._effects():
             key = fx.name  # OP name is the stable key
@@ -135,13 +132,13 @@ class PoseEfxSwitchExt:
             labels.append(lab)
 
         # Stamp the UI menu
-        self.owner.par.ActiveEffect.menuNames  = keys
-        self.owner.par.ActiveEffect.menuLabels = labels
+        self.owner.par.Activeeffect.menuNames  = keys
+        self.owner.par.Activeeffect.menuLabels = labels
 
         # Keep current selection valid, then push activation
-        cur = (self.owner.par.ActiveEffect.eval() or '').strip()
+        cur = (self.owner.par.Activeeffect.eval() or '').strip()
         if cur not in keys and keys:
-            self.owner.par.ActiveEffect = keys[0]
+            self.owner.par.Activeeffect = keys[0]
         self.OnActiveEffectChanged()
 
     def _label_for_effect(self, fx):
@@ -163,11 +160,11 @@ class PoseEfxSwitchExt:
             return
         self._syncing = True
         try:
-            key = (self.owner.par.ActiveEffect.eval() or '').strip()
+            key = (self.owner.par.Activeeffect.eval() or '').strip()
             idx = self._indexForOpName(key)
-            if idx is not None and int(self.owner.par.ActiveIndex.eval() or -1) != idx:
-                self.owner.par.ActiveIndex = idx
-            self.SetActiveIndex(int(self.owner.par.ActiveIndex.eval() or 0))
+            if idx is not None and int(self.owner.par.Activeindex.eval() or -1) != idx:
+                self.owner.par.Activeindex = idx
+            self.SetActiveIndex(int(self.owner.par.Activeindex.eval() or 0))
         finally:
             self._syncing = False
 
@@ -178,10 +175,10 @@ class PoseEfxSwitchExt:
             return
         self._syncing = True
         try:
-            idx = int(self.owner.par.ActiveIndex.eval() or 0)
+            idx = int(self.owner.par.Activeindex.eval() or 0)
             fx  = self._effectAtIndex(idx)
             key = fx.name if fx else ''
-            if key and (self.owner.par.ActiveEffect.eval() or '') != key:
+            if key and (self.owner.par.Activeeffect.eval() or '') != key:
                 self.owner.par.ActiveEffect = key
             self.SetActiveIndex(idx)
         finally:
@@ -196,7 +193,7 @@ class PoseEfxSwitchExt:
             return
         if key not in keys:
             key = keys[0]
-        self.owner.par.ActiveEffect = key  # triggers OnActiveEffectChanged
+        self.owner.par.Activeeffect = key  # triggers OnActiveEffectChanged
 
     def SetActiveIndex(self, idx: int):
         """
@@ -208,13 +205,10 @@ class PoseEfxSwitchExt:
         if sw:
             sw.par.index = int(idx)
 
-        # Gate cooking + call SetActive on each effect
+        # Gate cooking + call SetActive on each effect (PoseEffect_ )
         for i, fx in enumerate(self._effects()):
             is_active = (i == int(idx))
             fx.allowCooking = is_active
-            core = fx.op('fxCore')
-            if core:
-                core.par.bypass = not is_active
             if hasattr(fx.ext, 'PoseEffectMasterExt'):
                 fx.ext.PoseEffectMasterExt.SetActive(is_active)
 

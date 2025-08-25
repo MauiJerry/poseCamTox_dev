@@ -4,51 +4,76 @@
 class LandmarkSelectExt:
     def __init__(self, owner):
         debug("db init landmarkSelectExt")
-        print("pr init landmarkSelectExt")
         self.owner = owner
 
     def Rebuild(self):
-        key = (self.owner.par.LandmarkFilter.eval() or '').strip().lower()
-        custom_csv = (self.owner.par.Landmarkfiltercsv.eval() or '').strip()
+        par = self.owner.par
+        key = (par.LandmarkFilter.eval() or '').strip().lower()
+        custom_csv = (par.Landmarkfiltercsv.eval() or '').strip()
 
-        posefx = self.owner.parent()
-        default_csv = ''
-        if hasattr(posefx.ext, 'PoseEffectMasterExt'):
-            default_csv = posefx.ext.PoseEffectMasterExt.ResolveMenuCSV(key)
-
-        sel  = self.owner.op('select1')
-        mask = self.owner.op('landmark_mask')
-        names= self.owner.op('landmark_names')
-        if not sel or not mask or not names:
-            self._log("Missing select1/landmark_mask/landmark_names.")
+        sel = self.owner.op('select1')
+        if not sel:
+            print('LandmarkSelect: missing select1')
             return
 
-        # choose mask file
+        # All/blank → pass-through
         if key in ('', 'all'):
-            mask.par.file = ''
-        elif key == 'custom':
-            mask.par.file = custom_csv
-        else:
-            mask.par.file = default_csv or ''
+            sel.par.op = '../in1'
+            sel.par.channame = ''  # blank selects everything
+            return
 
-        # build channels
-        if key in ('', 'all'):
-            nlist = _col_as_list(names, 'name')
-            chans = _flatten([_xyz(n) for n in nlist])
+        # Get source mask table
+        src = None
+        if key == 'custom' and custom_csv:
+            # Use file directly (Table DAT will auto-reload on file change)
+            m = self.owner.op('landmark_mask')
+            if m:
+                m.par.file = custom_csv
+                src = m
         else:
-            rows = _rows_as_dicts(mask)
-            chans = []
-            for r in rows:
-                ch = (r.get('chan') or '').strip()
-                nm = (r.get('name') or '').strip()
-                if ch: chans.append(ch)
-                elif nm: chans += _xyz(nm)
+            # Ask parent effect → switch for cached table
+            pfx = self.owner.parent()
+            if hasattr(pfx.ext, 'PoseEffectMasterExt'):
+                src = pfx.ext.PoseEffectMasterExt.ResolveMaskTable(key)
+            # Fallback to switch-provided csv path if cache missing
+            if not src and hasattr(pfx.ext, 'PoseEffectMasterExt'):
+                csv_path = pfx.ext.PoseEffectMasterExt.ResolveMenuCSV(key)
+                m = self.owner.op('landmark_mask')
+                if m:
+                    m.par.file = csv_path
+                    src = m
 
-        # apply
+        # Build channel name list
+        chan_list = self._channels_from_table(src) if src else ''
         sel.par.op = '../in1'
-        sel.par.channame = ' '.join(_dedup(chans))
-        self._log(f"Rebuild key='{key}', file='{mask.par.file.eval()}', count={len(chans)}")
+        sel.par.channame = chan_list
 
+# helpers
+    # helpers
+    def _channels_from_table(self, tab):
+        if not tab or tab.numRows <= 1:
+            return ''
+        heads = [c.val.lower() for c in tab.row(0)]
+        out = []
+        if 'chan' in heads:
+            ci = heads.index('chan')
+            for r in tab.rows()[1:]:
+                v = r[ci].val.strip()
+                if v: out.append(v)
+        elif 'name' in heads:
+            ni = heads.index('name')
+            for r in tab.rows()[1:]:
+                nm = r[ni].val.strip()
+                if nm:
+                    b = nm + '_'
+                    out.extend([b+'x', b+'y', b+'z'])
+        # de-dup keep order
+        seen, uniq = set(), []
+        for c in out:
+            if c and c not in seen:
+                seen.add(c); uniq.append(c)
+        return ' '.join(uniq)
+    
     def _log(self, msg):
         logdat = self.owner.op('log')
         try:
@@ -56,7 +81,6 @@ class LandmarkSelectExt:
             else: print(str(msg))
         except Exception: pass
 
-# helpers
 def _rows_as_dicts(tab):
     try:
         if tab.numRows <= 1 or tab.numCols <= 0: return []

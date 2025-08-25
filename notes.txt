@@ -107,3 +107,5 @@ gotta do it anyway as its time to go be social
 ---
 ok, enough with Chat and Architecture refactors
 back to using print() and debug() to trace actions and Debug
+---
+ahh to get paramexec to trigger, it needs to point at the parent properly, and the Parameters field should be * to trigger on all parameters
