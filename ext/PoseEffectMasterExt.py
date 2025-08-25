@@ -57,11 +57,11 @@ class PoseEffectMasterExt:
     def ApplyFilter(self):
         """Ask the child landmarkSelect to rebuild its Select CHOP pattern."""
         debug("ApplyFilter called" )
-        ls = self.owner.op('landmarkSelect')
+        ls = self.owner.op('landmarkselect')
         if ls and hasattr(ls.ext, 'LandmarkSelectExt'):
             ls.ext.LandmarkSelectExt.Rebuild()
         else:
-            debug(f"{self.name} LandmarkSelect not found or missing ext: {ls}")
+            debug(f" LandmarkSelect not found or missing ext: {ls}")
 
     def ResolveMenuCSV(self, key: str) -> str:
         """Delegate menu CSV lookup to the PoseEfxSwitch parent."""

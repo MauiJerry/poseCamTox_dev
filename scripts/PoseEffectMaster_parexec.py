@@ -23,6 +23,7 @@ def _ext():
 def _guarded(fn):
     # Prevent re-entrancy loops
     if me.fetch(BUSY_KEY, False):
+        debug("onValueChange: re-entrant call detected")
         return
     me.store(BUSY_KEY, True)
     try:
@@ -49,6 +50,8 @@ def onValueChange(par, prev):
     elif nm in WATCH_ACTIVE:
         # Only react to UI/switcher; SetActive() no longer writes Active back
         val = bool(par.eval())
+        debug(f"onValueChange ACTIVE {val}")
+
         _guarded(lambda: ext.SetActive(val))
     return True
 

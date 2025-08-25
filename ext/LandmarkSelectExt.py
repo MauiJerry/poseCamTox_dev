@@ -56,112 +56,161 @@ class LandmarkSelectExt:
     # ------------------------------
     def Rebuild(self):
         """
-        Recompute the Select CHOP's channel pattern based on parameters and CSVs.
+        Recompute the landmark selection with a Switch-CHOP pass-through strategy.
 
-        Steps:
-          1) Resolve which mask CSV to use from Landmarkfilter/Filtercsv.
-             - If Landmarkfilter=All: expand all names from `table_names`.
-          2) Build a unified list of channel patterns (strings).
-             - If Landmarkfilter=All: expand all names from `table_names`.
-             - Else: read `table_mask`; rows may be 'name' or 'chan'.
-             
-          3) De-duplicate (preserve order) 
-          4) write the space-separated list into `select1.par.channame`.
-          
+        Behavior
+        --------
+        - If Landmarkfilter is empty, "all", or "*":
+            * Do NOT build any pattern string or read CSVs.
+            * Route pass-through: switch1.index = 0
+            * Bypass select1 to avoid unnecessary cooking.
+            * Return early.
+        - Otherwise:
+            * Resolve the CSV path for the chosen filter (or use override CSV parameter).
+            * Load that CSV into the 'landmark_mask' Table DAT.
+            * Build the channel list (expanding 'name' rows to *_x/_y/_z; 'chan' rows used verbatim).
+            * Deduplicate (preserve order).
+            * Ensure select1 has a valid source (prefer wired input; otherwise set par.chop to ../in1).
+            * Write channames (only if changed).
+            * Route filtered path: switch1.index = 1 and un-bypass select1.
+
+        Robustness
+        ----------
+        - Logs and returns if required OPs are missing (select1, switch1, in1, landmark_mask).
+        - Parameter names are checked in a tolerant way (Landmarkfilter vs LandmarkFilter, etc.).
+        - Only writes TD parameters when values change to avoid cook dependency loops.
         """
-        
-        # setup local variables
+
         par = self.owner.par
-        mode = (par.Landmarkfilter.eval() or '').strip().lower()
 
-        selectCHOP = self.owner.op('select1')
-        if not selectCHOP:
-            self._log("[Rebuild] Missing 'select1' Select CHOP.")
-            return
+        # --- param helpers (tolerant to naming) -----------------------------------
+        def _get_str(par_names, default=''):
+            for n in par_names:
+                if hasattr(par, n):
+                    try:
+                        v = getattr(par, n).eval()
+                    except Exception:
+                        v = getattr(par, n)
+                    return (v or '').strip()
+            return default
 
-        # Step 1: choose / set mask CSV on the Table DAT
+        mode = _get_str(('Landmarkfilter', 'LandmarkFilter')).lower()
+        csv_override = _get_str(('Landmarkfiltercsv', 'LandmarkMaskCSV'))
+
+        # --- op handles ------------------------------------------------------------
+        sel = self.owner.op('select1')
+        sw  = self.owner.op('switch1')
+        in1 = self.owner.op('in1')
         tmask = self.owner.op('landmark_mask')
-        if not tmask:
-            self._log("[Rebuild] Missing 'table_mask' Table DAT.")
+
+        if not sel or not sw or not tmask:
+            self._log("[Rebuild] ERROR: missing one of required ops: select1 / switch1 / landmark_mask.")
+            return
+        if not in1:
+            # We can still function if select1 has a wire, but warn once.
+            self._log("[Rebuild] WARNING: 'in1' not found in landmarkSelect; will rely on wired input to select1.")
+
+        # --- PASS-THROUGH for All/blank -------------------------------------------
+        if mode in ('', 'all', '*'):
+            # Route pass-through (input 0) and bypass select
+            if sw.par.index.eval() != 0:
+                sw.par.index = 0
+            if not sel.bypass:
+                sel.bypass = True
+            self._log("[Rebuild] Pass-through path (All). switch1.index=0, select1.bypass=1.")
             return
 
-        # Normalize mode to an enum
-        # Accepts: all, hands, basicpose, face, customcsv
-        csv_path = None
+        # --- resolve CSV path for filtered modes ----------------------------------
+        csv_path = ''
         if mode == 'hands':
             csv_path = 'data/masks_hands.csv'
         elif mode == 'basicpose':
             csv_path = 'data/masks_basicpose.csv'
         elif mode == 'face':
-            # Optional: only use if you ship a face mask file
             csv_path = 'data/masks_face.csv'
-        elif mode == 'customcsv':
-            csv_path = par.LandmarkMaskCSV.eval().strip() if hasattr(par, 'LandmarkMaskCSV') else ''
+        elif mode in ('customcsv', 'custom'):
+            csv_path = csv_override
             if not csv_path:
-                self._log("[Rebuild] Landmarkfilter is CustomCSV but Filtercsv is empty.")
-        elif mode == 'all':
-            csv_path = ''  # handled specially below
+                self._log("[Rebuild] CustomCSV selected but no CSV override provided.")
         else:
-            # Unknown mode: fall back to 'all'
-            self._log(f"[Rebuild] Unknown Landmarkfilter '{mode}', defaulting to All.")
-            csv_path = ''
-
-        # Apply file path to `landmark_mask`
-        tmask.par.file = csv_path
-
-        # Step 2: build channel list
-        channels = []
-        if mode == 'all' or not mode: # Default/All landmarks
-            # Expand *all* names from table_names
-            names = self._read_landmark_names()
-            if not names:
-                self._log("[Rebuild] No names found in 'table_names'; Select will be empty.")
-            for nm in names:
-                channels += self._expand_name_to_chans(nm)
-        else:
-            # Expand from mask rows (either 'chan' or 'name')
-            items = self._read_mask_items()
-            if not items:
-                self._log(f"[Rebuild] No rows read from mask '{csv_path}'.")
-            for kind, val in items:
-                if kind == 'chan':
-                    # Use verbatim string; wildcards are allowed by Select CHOP
-                    channels.append(val)
-                else:  # 'name'
-                    channels += self._expand_name_to_chans(val)
-
-        # Step 3: de-dup while preserving order
-        final = _dedup_preserve_order(channels)
-        
-        # Step 4: Write pattern into Select CHOP
-        debug(f"[Rebuild] Writing pattern to Select CHOP ({selectCHOP.name}): {final}")
-        selectCHOP = self.owner.op('select1')
-        if not selectCHOP:
-            self._log("[Rebuild] ERROR: missing Select CHOP 'select1'.")
+            # Unknown mode: treat as filtered-but-misconfigured → fallback to pass-through
+            self._log(f"[Rebuild] Unknown Landmarkfilter '{mode}'. Using pass-through.")
+            if sw.par.index.eval() != 0:
+                sw.par.index = 0
+            if not sel.bypass:
+                sel.bypass = True
             return
 
-        # Prefer a wired input. If present, clear the CHOP param so the wire is used.
-        if selectCHOP.inputs and len(selectCHOP.inputs) > 0:
-            if selectCHOP.par.chop.eval() != '':
-                selectCHOP.par.chop = ''  # let the wire drive the source
-        else:
-            # Fall back to a named source
-            src = self.owner.parent().op('in1') or self.owner.op('in1')
-            if src:
-                selectCHOP.par.chop = src.path
+        if not csv_path:
+            # Filtered mode but no csv_path resolved → safe fallback to pass-through
+            self._log(f"[Rebuild] No CSV found for mode '{mode}'. Using pass-through.")
+            if sw.par.index.eval() != 0:
+                sw.par.index = 0
+            if not sel.bypass:
+                sel.bypass = True
+            return
+
+        # --- load CSV into landmark_mask ------------------------------------------
+        try:
+            if tmask.par.file.eval() != csv_path:
+                tmask.par.file = csv_path
+            # Reload to be explicit
+            if hasattr(tmask.par, 'reload'):
+                tmask.par.reload.pulse()
+        except Exception as e:
+            self._log(f"[Rebuild] ERROR setting landmark_mask file: {e}")
+            return
+
+        # --- build channel list from mask rows ------------------------------------
+        items = self._read_mask_items()
+        if not items:
+            self._log(f"[Rebuild] No rows read from mask '{csv_path}'. Using pass-through.")
+            if sw.par.index.eval() != 0:
+                sw.par.index = 0
+            if not sel.par.bypass:
+                sel.par.bypass = True
+            return
+
+        channels = []
+        for kind, val in items:
+            if kind == 'chan':
+                channels.append(val)
             else:
-                self._log("[Rebuild] WARNING: no wired input and no '../in1' found.")
-                return  # nothing to select from
+                channels += self._expand_name_to_chans(val)
 
-        # Write channel patterns — NOTE: parameter is 'channames' (plural)
-        new_pattern = ' '.join(final)  # final is your expanded list like ['head_x','head_y',...]
-        if selectCHOP.par.channames.eval() != new_pattern:
-            selectCHOP.par.channames = new_pattern
-        src = self.owner.parent().op('in1') or self.owner.parent().op('inCHOP')
+        final = _dedup_preserve_order(channels)
+        pattern = ' '.join(final)
 
-        # was: person={pid} (remove person; it’s stripped upstream now)
-        self._log(f"[Rebuild] Built {len(final)} channel patterns (mode='{mode}').")
+        # --- ensure select1 has a source ------------------------------------------
+        # Prefer wire. If wired, clear par.chop; else set it to ../in1 if available.
+        if sel.inputs and len(sel.inputs) > 0:
+            if sel.par.chop.eval() != '':
+                sel.par.chop = ''
+        else:
+            # fall back to parent-in1 if not wired
+            fallback_src = self.owner.parent().op('in1') or in1
+            if fallback_src:
+                if sel.par.chop.eval() != fallback_src.path:
+                    sel.par.chop = fallback_src.path
+            else:
+                self._log("[Rebuild] No wired input and no '../in1' available; cannot apply filter.")
+                return
 
+        # --- write channames only if changed --------------------------------------
+        try:
+            if sel.par.channames.eval() != pattern:
+                sel.par.channames = pattern
+        except Exception as e:
+            self._log(f"[Rebuild] ERROR writing channames: {e}")
+            return
+
+        # --- switch to filtered path and un-bypass select --------------------------
+        if sw.par.index.eval() != 1:
+            sw.par.index = 1
+        if sel.par.bypass:
+            sel.par.bypass = False
+
+        self._log(f"[Rebuild] Filter='{mode}', {len(final)} chans → switch1.index=1.")
 
     # ------------------------------
     # Helpers (table reads / transforms)
