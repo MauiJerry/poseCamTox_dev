@@ -15,7 +15,7 @@ great — if `fxCore/landmark_to_instances` is cooking and you see `tx/ty/scale/
 4. Add **Camera COMP** (Orthographic) with **Width = 2**.
 5. Add **Render TOP** (cam + `dot_geo`) → wire to `../fxOut`.  
 
-> Why width=2? Your Script CHOP’s `scale` is in NDC pixels (2 / CanvasH), so dots are pixel‑true in ortho. 
+> Why width=2? Your Script CHOP’s `scale` is in NDC pixels (2 / CanvasH), so dots are pixel‑true in ortho. ****
 
 ### 2) Make sure the Script CHOP is wired as designed
 

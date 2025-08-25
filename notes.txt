@@ -113,3 +113,14 @@ ahh to get paramexec to trigger, it needs to point at the parent properly, and t
 moved all the build notes from docs to docs/Build Notes
 later we can clean these out completely, so only exist in the git repo not on disk
 
+not sure wtf is going on with the instructions for Dots, so went back to old OSC_Dots.toe 
+Copied its important stuff into a container, then copied that container into PoseCamTox_Dev's PoseEffect_Dots/fxCore
+it is different approach, no SOP just a stream of xyz points w/number points.
+so will need to adjust design.
+---
+got it working!! although because of diffence between PoseCam in uv(0-1) and TD Render in normalizedDeviceCoord ndc(-1,1)
+
+Caveat with Variable names... There are lots of styles for naming variables (Parameters) in the software world.
+CamelCase aka TitleCase is readable and just alpha chars
+variable_name is one of the preferred Python styles
+Parametername is how TD creates and names Custom Parameters
