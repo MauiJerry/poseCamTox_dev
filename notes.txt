@@ -109,3 +109,7 @@ ok, enough with Chat and Architecture refactors
 back to using print() and debug() to trace actions and Debug
 ---
 ahh to get paramexec to trigger, it needs to point at the parent properly, and the Parameters field should be * to trigger on all parameters
+
+moved all the build notes from docs to docs/Build Notes
+later we can clean these out completely, so only exist in the git repo not on disk
+

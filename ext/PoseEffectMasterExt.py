@@ -1,4 +1,4 @@
-﻿# ext/PoseEffectMasterExt.py
+# ext/PoseEffectMasterExt.py
 # Lives on each PoseEffect_* (including the Master). Handles activation, bypass policy,
 # and tells the child landmarkSelect to rebuild when needed.
 
@@ -8,6 +8,7 @@ class PoseEffectMasterExt:
 
     def SetActive(self, active: bool):
         """Called by PoseEfxSwitch when this effect becomes (in)active."""
+        debug(f"SetActive({active}) called" )
         # 1) Gate cooking at the COMP level
         self.owner.allowCooking = bool(active)
 
@@ -26,6 +27,7 @@ class PoseEffectMasterExt:
 
     def ApplyFilter(self):
         """Ask the child landmarkSelect to rebuild its Select CHOP pattern."""
+        debug("ApplyFilter called" )
         ls = self.owner.op('landmarkSelect')
         if ls and hasattr(ls.ext, 'LandmarkSelectExt'):
             ls.ext.LandmarkSelectExt.Rebuild()
@@ -34,6 +36,7 @@ class PoseEffectMasterExt:
 
     def ResolveMenuCSV(self, key: str) -> str:
         """Delegate menu CSV lookup to the PoseEfxSwitch parent."""
+        debug(f"{self.name} ResolveMenuCSV called" )
         switch = self.owner.parent()
         if hasattr(switch.ext, 'PoseEfxSwitchExt'):
             return switch.ext.PoseEfxSwitchExt.ResolveMenuCSV(key)

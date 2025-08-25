@@ -117,7 +117,7 @@ class LandmarkSelectExt:
             if not names:
                 self._log("[Rebuild] No names found in 'table_names'; Select will be empty.")
             for nm in names:
-                channels += self._expand_name_to_chans(nm, pid)
+                channels += self._expand_name_to_chans(nm)
         else:
             # Expand from mask rows (either 'chan' or 'name')
             items = self._read_mask_items()
@@ -128,7 +128,7 @@ class LandmarkSelectExt:
                     # Use verbatim string; wildcards are allowed by Select CHOP
                     channels.append(val)
                 else:  # 'name'
-                    channels += self._expand_name_to_chans(val, pid)
+                    channels += self._expand_name_to_chans(val)
 
         # Step 3: de-dup while preserving order
         final = _dedup_preserve_order(channels)
@@ -186,13 +186,13 @@ class LandmarkSelectExt:
                 items.append(('name', nm))
         return items
 
-    def _expand_name_to_chans(self, name, pid):
+    def _expand_name_to_chans(self, name):
         """
         Given a landmark name and person id, produce TouchDesigner CHOP channel
         names for axes x/y/z (z is included for forward compatibility).
         Example: name='wrist_l', pid=1 -> ['p1_wrist_l_x', 'p1_wrist_l_y', 'p1_wrist_l_z']
         """
-        base = f"p{pid}_{name}_"
+        base = f"{name}_"
         # Even if you don't currently publish _z, including it here is harmless:
         # the Select CHOP will simply ignore non-existent channels.
         return [base + 'x', base + 'y', base + 'z']

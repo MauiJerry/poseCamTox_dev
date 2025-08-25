@@ -1,6 +1,8 @@
-# PoseEffect_Master / parexec  (TouchDesigner Parameter Execute DAT script)
+# PoseEffect_Master / parexec DAT has this code
 # This DAT lives inside each PoseEffect_* (via the master clone source).
 # It calls the effect's extension to rebuild landmark selection or toggle cooking.
+
+BUSY_KEY = '_parexec_busy'
 
 # ------------------------
 # helpers
@@ -17,6 +19,17 @@ def _ext():
         return None
     return getattr(ex, 'PoseEffectMasterExt', None)
 
+
+def _guarded(fn):
+    # Prevent re-entrancy loops
+    if me.fetch(BUSY_KEY, False):
+        return
+    me.store(BUSY_KEY, True)
+    try:
+        fn()
+    finally:
+        me.store(BUSY_KEY, False)
+
 # Parameters to watch (case-insensitive)
 _WATCH_FILTER = {'landmarkfilter', 'landmarkfiltercsv'}
 _WATCH_ACTIVE = {'active'}
@@ -26,17 +39,35 @@ _WATCH_ACTIVE = {'active'}
 # ------------------------
 
 def onValueChange(par, prev):
-    """
-    Fires for each parameter as it changes.
-    We keep this light-weight and let onValuesChanged() coalesce multiple changes.
-    """
-    # If you prefer immediate rebuild for single changes, you can uncomment:
-    # if _norm_name(par) in _WATCH_FILTER:
-    #     ext = _ext()
-    #     if ext: ext.ApplyFilter()
+    nm  = _norm_name(par)
+    ext = _ext()
+    if not ext:
+        return True
+
+    if nm in WATCH_FILTER:
+        _guarded(lambda: ext.ApplyFilter())
+    elif nm in WATCH_ACTIVE:
+        # Only react to UI/switcher; SetActive() no longer writes Active back
+        val = bool(par.eval())
+        _guarded(lambda: ext.SetActive(val))
     return True
 
-def onValuesChanged(changes):
+def onPulse(par):
+    # Optional: add a Pulse param 'ApplyFilter' on the effect to force a rebuild
+    if _norm_name(par) == 'applyfilter':
+        ext = _ext()
+        if ext:
+            _guarded(lambda: ext.ApplyFilter())
+    return True
+
+# Leave the rest at defaults
+def onValuesChanged(changes): return True
+def onExpressionChange(par, val, prev): return True
+def onExportChange(par, val, prev): return True
+def onEnableChange(par, val, prev): return True
+def onModeChange(par, val, prev): return True
+
+def onValuesChanged_old(changes):
     """
     Called once at end of frame with all changes.
     We coalesce: if any filter-related param changed, rebuild once.
@@ -70,33 +101,3 @@ def onValuesChanged(changes):
 
     return True
 
-def onPulse(par):
-    """
-    Optional: if you add a Pulse parameter named 'ApplyFilter' on PoseEffect_Master,
-    this lets you force a rebuild from the UI.
-    """
-    nm = _norm_name(par)
-    if nm in ('applyfilter',):
-        ext = _ext()
-        if ext:
-            try:
-                ext.ApplyFilter()
-            except Exception as e:
-                print('[PoseEffectMaster parexec] ApplyFilter (pulse) error:', e)
-    return True
-
-def onExpressionChange(par, val, prev):
-    # No special handling needed; keep default True.
-    return True
-
-def onExportChange(par, val, prev):
-    # No special handling needed; keep default True.
-    return True
-
-def onEnableChange(par, val, prev):
-    # No special handling needed; keep default True.
-    return True
-
-def onModeChange(par, val, prev):
-    # No special handling needed; keep default True.
-    return True
