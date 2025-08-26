@@ -340,7 +340,7 @@ def onCook(scriptOp):
             except Exception:
                 pass
 
-    # output landmark channels
+    # output landmark channels, sorted by name
     for (pid, lname), (x, y, z) in sorted(latest.items(), key=lambda kv: (kv[0][0], kv[0][1])):
         _append_scalar(scriptOp, f'p{pid}_{lname}_x', x)
         _append_scalar(scriptOp, f'p{pid}_{lname}_y', y)

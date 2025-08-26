@@ -124,3 +124,21 @@ Caveat with Variable names... There are lots of styles for naming variables (Par
 CamelCase aka TitleCase is readable and just alpha chars
 variable_name is one of the preferred Python styles
 Parametername is how TD creates and names Custom Parameters
+
+To flip the Dots (right side up to match image) Chat said to put an Expression CHOP after the shuffle_landmarks (tx,ty,tz)
+with the expression
+(me.inputVal *2)-1
+(me.inputs[0]['tx'] *2)-1
+((1 - me.inputVal) * 2) - 1
+
+but these dont work well.
+it also talked about using a MathChop in that position.
+
+AARRRGGGHHH first thing after creating a PoseEffectMASTER clone -> disable fxCore cloning
+open the new clone (PoseEffect_Dots)
+select the fxCore inside it
+on the Common Parameters page, turn off Enable Cloning
+
+otherwise you will lose all your fxCore changes when you exit and reload!
+
+When the dev setup is running. PoseCamPC can be left in background. If you want to stop cooking in TD (distracting, etc) simply stop the video.  Note this will also stop both NDI and OSC output.  Someday we go back to PoseCamPC and have single Start/Stop that does all 3.
