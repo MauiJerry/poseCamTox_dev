@@ -17,5 +17,3 @@ def onStart():
 
     #op('.').ext.PoseEffectMasterExt.OnStart()
     return
-
-d

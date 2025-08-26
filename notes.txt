@@ -182,5 +182,8 @@ Disable Cloning
 an error is about the issues around onStart() and onCreate()
 which call the PoseEffectMasterExt.py onStart() perhaps incorrectly
 this may be source of the Clone Loop too.
-changed PoseEffectMaster_exec_on_start to delay calling the Ext.onStart() until  op(.)extensionsReady (internal TD flag)
+---
+
+ok cleared errors (was a bad char in script)
+now back to re-building _Dots/fxCore
 
