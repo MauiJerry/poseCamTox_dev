@@ -47,6 +47,10 @@ perfect catch on cloning. here’s a clean, **click-by-click rebuild** for `Pose
 1. Dive into `PoseEffect_Dots/fxCore`.
 2. **Common** page → **Enable Cloning = OFF**.
     *(Optional)* On key child nodes you edit a lot, set **Clone Immune = On** (right-click → Flags) so they won’t get overwritten if you later flip cloning on at parent comps.
+3. Turn on Immune Flag:
+   on the fxCore (viewed in _Dots) the op's frame has 4 or so icons on left edge (just inside input connectors.) The 2nd one down is the [Immune Flag](https://derivative.ca/UserGuide/Immune_Flag).
+   - [![ImmuneFlagOffIcon.png](https://docs.derivative.ca/images/9/91/ImmuneFlagOffIcon.png)](https://docs.derivative.ca/images/9/91/ImmuneFlagOffIcon.png) Off
+   - [![ImmuneFlagOnIcon.png](https://docs.derivative.ca/images/2/28/ImmuneFlagOnIcon.png)](https://docs.derivative.ca/images/2/28/ImmuneFlagOnIcon.png) On - This node is made immune.
 
 ------
 

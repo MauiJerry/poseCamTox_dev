@@ -151,3 +151,6 @@ added debug in person_router that does logging to file.
 so we need to remove any *.log files from git
 
 now testing if Enable Clone off really preserve contents of fxCore in _dots
+
+NO.. you need to set the Immune Flag, which is the 2nd icon down on left side of the op's display window (just to right of the input connectors).
+

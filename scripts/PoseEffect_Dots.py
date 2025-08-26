@@ -1,5 +1,7 @@
 # PoseEffect_Dots.py
 # Script CHOP for PoseEffect_Dots / fxCore
+# or it was.  no longer used. went for simpler implementation
+#
 # Input 0: single-person skeleton CHOP with channels like "<name>_x", "<name>_y" in UV [0..1]
 # Optional meta sources (priority):
 #   1) inMeta Table DAT inside fxCore: rows: image_width|value, image_height|value, aspect|value
