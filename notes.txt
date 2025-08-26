@@ -186,4 +186,9 @@ this may be source of the Clone Loop too.
 
 ok cleared errors (was a bad char in script)
 now back to re-building _Dots/fxCore
+---
+12:20p  it works but fx inverted
+got the _Dots/fxCore working and at top added proper composite/switch stuff to allow app to overlay or just show fxRendered stream.
+
+now go figure why it is upside down and wrong scale
 

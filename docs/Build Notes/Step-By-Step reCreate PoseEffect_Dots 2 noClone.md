@@ -4,26 +4,36 @@
 
 26 Aug - reality of the Clone/Immune stuff makes whole lotta our code/architecture wrong.
 
-moving plan to updated doc
-
-
+moving plan to updated doc 2 no Clone
 
 ## prompt
 
-ok big error.  I forgot to turn off "Enable Cloning" on the fxCore inside PoseEffect_Dots.  Thus all the changes i made were lost.  Lets write a step-by-step to add it back into the system.
+Basic plan
+
 0 Copy/Paste Master (or create new Container COMP), 0.1 rename to PoseEffect_NEWNAME
 0.2 connect it to effects' inLandmarks and inMeta. only keep connetion to inTop if the fx is going to use the NDI input image.
-1 turn off EnableCloning on fxCore
-2 create Custom Parameters for the Effect (UiColor, UiDotSize, etc) on the new PoseEffect_ (remember actual code names with be Uicolor, Uidotsize etc.)
-3 create same custom parameters on fxCore and bind them to the parent PoseEffect_ values
+1 turn off EnableCloning on fxCore, Mark it Immune
+
+2 create Custom Parameters for the fxCore (UiColor, UiDotSize, etc)  (remember actual code names with be Uicolor, Uidotsize etc.)
+
+(skip binding, impl on PoseEffect_ parent etc)
+
 4 open fxCore and implement its features
-4.1 create the shuffle_landmarks to convert inLandmarks to tx,ty,tz.
-4.2 flip ty
-4.3 put null chops after shuffle and also after flip latter is readyLandmarks
+
+Open poseOSC_Dots.toe and copy from there.
+
+copy over BAS that processes landmarks, remove the initial select; call it prepareLandmarks, drop null after call it landmarksPrepared
+
+still need to flip ty properly
+
 4.5 create the Geo, Mat, Camera, Render setup 
-4.5.1 rename Mat for _Dots
-4.6 connect Color of Mat to fxCore UiColor rgba Parameter
-4.7 connect geo to Uidotsize Parameter
+
+copy over the Geo, cam, render stuff
+
+material renamed: dot_material
+
+4.6 connect Color of Mat to fxCore UiColor rgba Parameter  (later)
+
 4.8 feed the inMeta image_width image_height to Render
 4.9 render Connects to fxCore outTop
 Result should show up properly at top level, and in some of the COMPS that have the Render or similar flag to display them on background.
@@ -60,42 +70,15 @@ perfect catch on cloning. here’s a clean, **click-by-click rebuild** for `Pose
 
 ------
 
-### 2) top-level custom parameters (the ones you’ll edit)
-
-on **PoseEffect_Dots** (the parent) → **Customize Component…**
-
-- Page **Look**:
-  - `UiColor` (RGBA) — default 1,1,1,1
-  - `UiDotsize` (Float) — default 8 (px), range 1–64
-  - *(optional)* `UiOpacity` (0–1), `UiColormode` (Menu: `Fixed|RandomPerLandmark`)
-
-> note: TD exposes these in python as `.par.Uicolor`, `.par.Uidotsize`, etc. (only the first letter stays uppercase).
-
-------
-
-### 3) mirror the same params on `fxCore` and **bind**
+>  mirror the same params on `fxCore` and **bind**
 
 on **PoseEffect_Dots/fxCore** → **Customize Component…**
 
-- Add **the same names**: `UiColor`, `UiDotsize` (and any optional ones).
-- For each, set **Mode = Bind** and **Bind Expression** to parent:
-  - `UiColor` → `op('..').par.Uicolor`
-  - `UiDotsize` → `op('..').par.Uidotsize`
-  - (same idea for `UiOpacity`, `UiColormode`)
+- Add **fxParams called **: `UiColor`, `UiDotsize` (and any optional ones).
 
-now anything inside `fxCore` uses `fxCore.par.Uicolor`/`Uidotsize` and they stay in sync with the top.
+  > note: TD exposes these in python as `.par.Uicolor`, `.par.Uidotsize`, etc. (only the first letter stays uppercase).
 
-------
-
-### 4) build the CHOP prep (shuffle → flip-Y → readyLandmarks)
-
-inside **fxCore**:
- 4.0 **CHOP In** (index 0) → rename `skeleton_in`.
- 4.1 **Shuffle / Reorder** to get three channels named **`tx, ty, tz`**:
-
-- If your incoming CHOP is per-landmark triples already, use **Rename CHOP** to set the three aggregate channels to `tx ty tz`.
-- If your input is a long list of `*_x/*_y/*_z` channels, use your existing **BAS shuffle_landmarks** network that outputs 3 channels.
-- Put a **Null CHOP** after it → name `after_shuffle`.
+  ### 
 
 4.2 **Flip Y only** (keep UV 0..1, just make Y-up):
 
@@ -157,6 +140,8 @@ inside **fxCore**:
 
 - **Resolution** → **Custom**:
 
+  note change of - to _ in inMeta names, add value string
+
   - **Width** expr:
 
     ```
@@ -184,6 +169,10 @@ back in **PoseEffect_Dots**:
 - connect `fxCore/outTop` to the component’s **TOP Out** (`fxOut`).
 - wire `PoseEffect_Dots/fxOut` into your **PoseEfxSwitch** (next free input of the switcher).
 - set **Selective Cook** on non-active effects (COMP ▸ Common ▸ Selective Cook = On) so only the active one cooks.
+
+
+
+Ignore 7 and below till say otherwise
 
 ------
 
@@ -229,3 +218,10 @@ back in **PoseEffect_Dots**:
 -  effect input wired into **PoseEfxSwitch** and selectable.
 
 if you tell me whether you want to **stay UV** or **switch to NDC** for this forever, i’ll give you the exact Uniform Scale expression and camera values for that path only (and remove the other branch so nothing drifts later).
+
+---
+
+ok it working (ignore step 7 etc above)
+
+now go up to top level and implement the process from output of efxswitch (renderedFX), merging/composite over NDI in aka inputImage Null
+
