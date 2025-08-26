@@ -43,9 +43,9 @@ class PoseEffectMasterExt:
         return ''
 
 
-    def OnStart():
+    def OnStart(self):
         debug("OnStart called, wtf we supposed to do here?" )
         # do things when the clone starts.
         # most importantly, be sure the fx_params are taken care of
-        op('fxCore').op('ensure_fx_pars').ensure()
+        self.owner.op('fxCore').op('ensure_fx_pars').ensure()
         

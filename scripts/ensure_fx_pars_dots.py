@@ -1,4 +1,4 @@
-# ensure_fx_pars_dots.py  (lives in fxCore of cloned PoseEffect_* container)
+# ensure_fx_pars_dots.py  (lives in fxCore of PoseEffect_Dots )
 # the ensure_fx_pars operator needs to be clone immune
 # basic one is linked in the original in the PoseEffect_Master
 # then the clone will need to create its own ensure_fx_pars_CloneName.py 

@@ -154,3 +154,26 @@ now testing if Enable Clone off really preserve contents of fxCore in _dots
 
 NO.. you need to set the Immune Flag, which is the 2nd icon down on left side of the op's display window (just to right of the input connectors).
 
+ok so the whole of the previous plan for cloning is boloxed.
+The CustomParameters on the clone'd PoseEffect_* get wiped out by the cloning process. only those that exist on the MASTER remain after restart.
+
+The fxCore will be clone immune, so we could put a Text DAT in there called ensure_fx_pars(). it will go thru the custom parameters we know we want (eg UiColor, UiColorType, Uidotsize) and insure both the fxCore (the TextDat's parent) and the PoseEffect_ xx have correct custom parameters.  
+
+---
+26 Aug 2025
+
+So with what we now know about Clones and Immunity, the prior design for exposing UI and setting the LandmarkFilter, and other Parameters in PoseEffect_ and its fxCore, needs to be completely rethought.
+
+The immune fxCore is where all the info should be kept. The junk in the PoseEfxSwitch and PoseEffectMASTER ext, init, and other scripts needs to be excised and revised.
+
+However, we need to get Dots working all the way thru, using the internal Parameter controls (fixed dotsize, name, landmark_filter (all), color, etc) of the fxCore to make it work.  Dont worry about Bound/clone stuff.
+mark CloneMaster of PoseEffect_Dots Clone Immune for now. (may need disconnct its Clone Master parameter)
+
+Landmark Filter should be set to pass thru for now.
+No need to support multiple until we get Dots working.
+
+Get the Dots working, and overlayed on ndi image for verification
+shows my dots vs PoseCamPC dots in ndi image, they should be exact match
+
+Hmm, marking _Dots clone immune thows an error about that.
+turn off Immunity, delete Clone Master turn off Enable External .tox
