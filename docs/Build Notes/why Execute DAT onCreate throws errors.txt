@@ -1,0 +1,107 @@
+Why onCreate() throws an error
+(from Google search ai)
+
+The onCreate() function is part of the Execute DAT's callback system, but it is fundamentally different from onStart(). 
+onStart(): Called once when the entire TouchDesigner process first starts, typically when you launch the .toe file.
+onCreate(): Called every time the operator is created. This happens when:
+The project loads (which is why it appears to work sometimes).
+You copy and paste the operator.
+You create the operator directly in the network. 
+The error you see, likely related to .ext.PoseEffectMasterExt not being found, is a timing issue. During the onCreate() phase, the system may not have fully initialized the extension you are trying to access. The onStart() callback for the root-level Execute DAT is a more reliable place to perform project-wide initialization tasks, as it runs after all operators and their extensions are created and ready. 
+Correct code for extension initialization
+To correctly call a function on an extension, your Execute DAT script should look like this:
+
+python
+# Assuming this Execute DAT is placed at the root level of your project.
+# The `onStart()` function is called once at project start.
+def onStart():
+	# Reference the component that holds your extension.
+	# Replace 'container1' with the actual path to your component.
+	component_op = op('container1')
+	
+	# Check if the extension and its function exist before calling.
+	if hasattr(component_op.ext, 'PoseEffectMasterExt') and hasattr(component_op.ext.PoseEffectMasterExt, 'OnStart'):
+		component_op.ext.PoseEffectMasterExt.OnStart()
+	else:
+		# Use the debug() function to print to the Textport for debugging.
+		debug("Error: PoseEffectMasterExt or its OnStart function not found on start.")
+
+	return
+Use code with caution.
+
+Best practice: Using the extensionsReady variable
+A robust way to handle this is to wait for the extension to be ready before calling a function. The extensionsReady variable can be used in expressions to prevent evaluation until the extension is fully initialized. For a Python callback, you can check its status. 
+python
+# A more robust onStart function
+def onStart():
+    component_op = op('container1')
+
+    # Wait for the extension to be ready.
+    if component_op.extensionsReady:
+        component_op.ext.PoseEffectMasterExt.OnStart()
+    else:
+        # Fallback or a warning if not ready in time.
+        debug("Warning: Extensions were not ready during onStart.")
+
+    return
+Use code with caution.
+
+For more complex initialization that involves timing, you can use a Delay CHOP or a custom extension method that is called after extensionsReady is set to True.
+---
+that code shows onStart().  should similar be in onCreate() or should onCreate() not attempt to call op().onStart? maybe its should call op().onCreate() ??
+
+---
+
+In TouchDesigner, you should not call op().onStart() from within the onCreate() callback of an Execute DAT. The two functions serve different purposes and run at different times during the program's lifecycle. 
+onStart() is a project-level event that runs only once when the entire TouchDesigner process begins. It is the correct place for all high-level, project-wide initialization tasks.
+onCreate() is an operator-specific event that runs every time the operator is created. This happens when the project is loaded, when you copy/paste the operator, or when you create it in the network. 
+The error you saw when calling op().ext.PoseEffectMasterExt.OnStart() from onCreate() was likely a timing issue. When onCreate() is triggered, the operator containing your extension might not have finished initializing, meaning the extension itself hasn't been created yet.
+Correct approach for calling extensions
+The best practice is to call extension functions from the most appropriate callback for the task, not necessarily from onCreate().
+For a project-wide initialization:
+Use the onStart() callback in a main Execute DAT placed at the root of your project. This ensures the call happens reliably after all operators, including those with extensions, have been created. 
+python
+# A single, main Execute DAT at the root of your project
+# The 'onStart' parameter must be active for this to run.
+def onStart():
+    # Call the initialization function on your extension after
+    # all components are guaranteed to have been created.
+    op('/some_component').ext.PoseEffectMasterExt.OnStart()
+    return
+Use code with caution.
+
+For component-specific initialization:
+Use the extension's own __init__() function. This function runs as soon as the extension is initialized for its parent component, which is a more robust approach for logic that is specific to that component. 
+python
+# Inside your extension's DAT
+class PoseEffectMasterExt:
+    def __init__(self, ownerComp):
+        # The constructor is called once, when the extension is initialized.
+        # This is the ideal place for self-initialization.
+        debug("Initializing PoseEffectMasterExt...")
+        self.ownerComp = ownerComp
+        self.OnStart() # You can call your own methods here
+    
+    def OnStart(self):
+        # All of your initialization logic can live here
+        debug("OnStart() called on PoseEffectMasterExt.")
+        return
+Use code with caution.
+
+When to use onCreate()
+The onCreate() callback is most useful for handling the creation of the operator itself, not for global program logic. For example, if you wanted to reset a specific parameter to a default value whenever a component is duplicated, onCreate() would be the right place for that logic.
+python
+# In an Execute DAT inside a reusable component
+def onCreate():
+    # Reset a custom parameter whenever this component is created.
+    op('.').par.custom_parameter = 0
+    return
+Use code with caution.
+
+Summary: onStart vs. onCreate
+ 	onStart()	onCreate()
+Trigger	Once, when the TouchDesigner process starts.	Every time the operator is created (on load, copy/paste).
+Purpose	Project-wide initial setup. Ensure global resources are ready.	Operator-specific setup. Handle a component's creation or duplication.
+Correct Call	Call op().ext.MyExtension.MyMethod() from onStart() of a root-level Execute DAT.	Call op().onCreate() is not standard. Use onCreate() for operator's self-setup, not for calling other operators.
+Correct Time	After all operators have been created and initialized.	When the specific operator is created, which may be too early for extensions.
+AI responses may include

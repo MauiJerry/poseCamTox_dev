@@ -2,6 +2,8 @@
 
 This pack contains **externalized** TouchDesigner scripts and data files for the Pose2Art / PoseCam project.
 
+Sorta: this project is under Very active development. Sometimes pushed to github, often only weekly.  Take everything you read with ton of salt as the docs are out of date and code in flux. (26aug2025)
+
 ## Contents
 
 ```

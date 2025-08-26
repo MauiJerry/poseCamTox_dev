@@ -177,3 +177,10 @@ shows my dots vs PoseCamPC dots in ndi image, they should be exact match
 
 Hmm, marking _Dots clone immune thows an error about that.
 turn off Immunity, delete Clone Master turn off Enable External .tox
+Disable Cloning
+
+an error is about the issues around onStart() and onCreate()
+which call the PoseEffectMasterExt.py onStart() perhaps incorrectly
+this may be source of the Clone Loop too.
+changed PoseEffectMaster_exec_on_start to delay calling the Ext.onStart() until  op(.)extensionsReady (internal TD flag)
+
