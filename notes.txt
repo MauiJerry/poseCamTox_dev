@@ -142,3 +142,12 @@ on the Common Parameters page, turn off Enable Cloning
 otherwise you will lose all your fxCore changes when you exit and reload!
 
 When the dev setup is running. PoseCamPC can be left in background. If you want to stop cooking in TD (distracting, etc) simply stop the video.  Note this will also stop both NDI and OSC output.  Someday we go back to PoseCamPC and have single Start/Stop that does all 3.
+
+Oy, person_router is broken now.  and for some reason it says we are getting 104+ channels every frame!
+go back to poseCamPC and log how many emitted per frame
+
+ok. PoseCam working right. 106 channels is 33*3 + meta data
+added debug in person_router that does logging to file.
+so we need to remove any *.log files from git
+
+now testing if Enable Clone off really preserve contents of fxCore in _dots

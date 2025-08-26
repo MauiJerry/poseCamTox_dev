@@ -4,6 +4,9 @@
 # Ignore the automatic backup folder created by TouchDesigner
 Backup/
 
+# ignore log files created by logging (if any)
+*.log
+
 # Ignore local configuration or data that shouldn't be shared
 local/
 config.local.json

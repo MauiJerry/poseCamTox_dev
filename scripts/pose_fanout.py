@@ -40,7 +40,7 @@ OSC In DAT requirements:
 """
 
 import re
-import logging
+# import logging
 
 OSC_IN_DAT_NAME      = 'poseoscIn1'
 ID_MAP_DAT_NAME      = 'landmark_map'
@@ -221,15 +221,17 @@ def _append_scalar(scriptOp, name, val):
     ch = scriptOp.appendChan(name)
     ch[0] = float(val)
 
-def _get_logger():
-    log = logging.getLogger('pose_fanout')
-    if not log.handlers:
-        h = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
-        fmt = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-        h.setFormatter(fmt)
-        log.addHandler(h)
-        log.setLevel(logging.DEBUG)
-    return log
+# def _get_logger():
+#     # This sets up a file logger, which is not visible in the Textport.
+#     # For Textport output, use print() or debug().
+#     log = logging.getLogger('pose_fanout')
+#     if not log.handlers:
+#         h = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
+#         fmt = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+#         h.setFormatter(fmt)
+#         log.addHandler(h)
+#         log.setLevel(logging.DEBUG)
+#     return log
 
 def _log_to_text_dat(lines):
     td_log = _op_lookup(LOG_TEXT_DAT_NAME)
@@ -246,6 +248,8 @@ def onCook(scriptOp):
     # debug("pose_fanout onCook")
     scriptOp.clear()
     osc_dat = _op_lookup(OSC_IN_DAT_NAME)
+    count_chanAdds = 0
+    count_metaAdds = 0
     if not osc_dat or _nrows(osc_dat) <= 0:
         _append_scalar(scriptOp, 'pose_n_people', 0.0)
         return
@@ -266,8 +270,8 @@ def onCook(scriptOp):
     ts_str = None
 
     if LOG_BUNDLES:
-        logger = _get_logger()
-        snap = ['--- pose_fanout frame ---']
+        # logger = _get_logger()
+        snap = ['--- pose_fanout frame (debug print) ---']
 
     nrows = _nrows(osc_dat)
     ncols = _ncols(osc_dat)
@@ -294,7 +298,8 @@ def onCook(scriptOp):
                     if vv != '':
                         arg_vals.append(vv)
             line = f"{addr}  {' '.join(arg_vals)}"
-            logger.debug(line)
+            # logger.debug(line)
+            print(line) # For Textport debugging
             snap.append(line)
 
         # -- grab metadata to local variables
@@ -345,25 +350,39 @@ def onCook(scriptOp):
         _append_scalar(scriptOp, f'p{pid}_{lname}_x', x)
         _append_scalar(scriptOp, f'p{pid}_{lname}_y', y)
         _append_scalar(scriptOp, f'p{pid}_{lname}_z', z)
+        count_chanAdds += 3
+
 
     # presence flags
     for pid in sorted(present):
         _append_scalar(scriptOp, f'p{pid}_present', 1.0)
+        count_metaAdds += 1
 
     # counts & metadata  prefix with m_ so as not to muck with later wild card p* 
     if num_persons is None:
         num_persons = len(present)
+    else :
+        num_persons = 0
     _append_scalar(scriptOp, 'm_n_people', float(num_persons))
+    count_metaAdds += 1
 
     if frame_count is not None:
         _append_scalar(scriptOp, 'm_frame_count', float(frame_count))
+        count_metaAdds += 1
+
     if img_w is not None:
         _append_scalar(scriptOp, 'm_img_w', float(img_w))
+        count_metaAdds += 1
+
     if img_h is not None:
         _append_scalar(scriptOp, 'm_img_h', float(img_h))
+        count_metaAdds += 1
+
     if ts_sec is not None:
         _append_scalar(scriptOp, 'm_ts_sec', ts_sec)
         _append_scalar(scriptOp, 'm_ts_ms', ts_sec * 1000.0)
+        count_metaAdds += 2
+        
     if ts_str:
         _set_text_dat(TS_STR_DAT_NAME, ts_str)
         
@@ -387,6 +406,9 @@ def onCook(scriptOp):
     if meta_updated and frame_count is not None:
         _upsert_meta('frame_count', int(frame_count))
 
+    debug(f"pose_fanout: Channel adds: {count_chanAdds}, Meta adds: {count_metaAdds}")
+    
     if LOG_BUNDLES:
+
         _log_to_text_dat(snap)
     return
