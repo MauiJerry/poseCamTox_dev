@@ -37,11 +37,9 @@ class PoseEffectMasterExt:
 
     def ResolveMenuCSV(self, key: str) -> str:
         """Delegate menu CSV lookup to the PoseEfxSwitch parent."""
-        debug(f"{self.name} ResolveMenuCSV called" )
-        switch = self.owner.parent()
-        if hasattr(switch.ext, 'PoseEfxSwitchExt'):
-            return switch.ext.PoseEfxSwitchExt.ResolveMenuCSV(key)
-        return ''
+        debug(f"{self.name} ResolveMenuCSV called, does nothing" )
+        
+    
 
 
     def OnStart(self):

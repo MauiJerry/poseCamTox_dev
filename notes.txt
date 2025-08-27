@@ -213,3 +213,11 @@ https://www.youtube.com/watch?v=xFAaDeRJGcc
 
 lets get dots working then review where we are
 
+working thru getting landmark menu working
+it will be a Menu on the PoseEffect_ 
+the LandmarkSelect COMP lives inside and loads menu definition, etc
+
+This was something shared at the EfxSwitch level,
+we are not concerned at this time with speed, memory so if it all gets duplicated then so be it.
+we fix that later.
+

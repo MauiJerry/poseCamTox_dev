@@ -1,51 +1,51 @@
     # build the Landmarks Menu, Preloading CSV files
-    # import os, csv, glob
+    import os, csv, glob
 
-    # def ScanAndBuildMaskMenu(self):
-    #     """Merge data/LandmarkFilterMenu.csv with discovered data/mask*.csv,
-    #     preload each mask to /mask_cache, and (re)build LandmarkFilterMenu_csv.
-    #     """
-    #     base_dir = project.folder
-    #     data_dir = os.path.join(base_dir, 'data')
+    def ScanAndBuildMaskMenu(self):
+        """Merge data/LandmarkFilterMenu.csv with discovered data/mask*.csv,
+        preload each mask to /mask_cache, and (re)build LandmarkFilterMenu_csv.
+        """
+        base_dir = project.folder
+        data_dir = os.path.join(base_dir, 'data')
 
-    #     def _abs(path_like):
-    #         if not path_like: return ''
-    #         return path_like if os.path.isabs(path_like) else os.path.join(base_dir, path_like)
+        def _abs(path_like):
+            if not path_like: return ''
+            return path_like if os.path.isabs(path_like) else os.path.join(base_dir, path_like)
 
-    #     # rows: dicts {key,label,csv,include,order}
-    #     rows, seen = [], set()
-    #     def _push(key, label, csvp='', include='1', order='1000'):
-    #         k = (key or '').strip().lower()
-    #         if not k or k in seen: return
-    #         seen.add(k)
-    #         rows.append({
-    #             'key': k,
-    #             'label': (label or k.title()).strip(),
-    #             'csv': (csvp or '').strip(),
-    #             'include': str(include or '1'),
-    #             'order': str(order or '1000')
-    #         })
+        # rows: dicts {key,label,csv,include,order}
+        rows, seen = [], set()
+        def _push(key, label, csvp='', include='1', order='1000'):
+            k = (key or '').strip().lower()
+            if not k or k in seen: return
+            seen.add(k)
+            rows.append({
+                'key': k,
+                'label': (label or k.title()).strip(),
+                'csv': (csvp or '').strip(),
+                'include': str(include or '1'),
+                'order': str(order or '1000')
+            })
 
-    #     # Always start with base rows
-    #     _push('all', 'All', '', '1', '0')
-    #     _push('custom', 'Custom', '', '1', '1')
+        # Always start with base rows
+        _push('all', 'All', '', '1', '0')
+        _push('custom', 'Custom', '', '1', '1')
 
-    #     # Optional config file
-    #     cfg = os.path.join(data_dir, 'LandmarkFilterMenu.csv')
-    #     if os.path.isfile(cfg):
-    #         try:
-    #             with open(cfg, newline='', encoding='utf-8') as f:
-    #                 for r in csv.DictReader(f):
-    #                     key   = (r.get('key') or '').strip().lower()
-    #                     label = (r.get('label') or '').strip()
-    #                     csvrel= (r.get('csv') or '').strip()
-    #                     inc   = (r.get('include') or '1').strip()
-    #                     order = (r.get('order') or '100').strip()
-    #                     # allow csv to be relative to data/
-    #                     full = _abs(csvrel if os.path.isabs(csvrel) else os.path.join('data', csvrel))
-    #                     _push(key, label, full if csvrel else '', inc, order)
-    #         except Exception as e:
-    #             print('[ScanAndBuildMaskMenu] config read error:', e)
+        # Optional config file
+        cfg = os.path.join(data_dir, 'LandmarkFilterMenu.csv')
+        if os.path.isfile(cfg):
+            try:
+                with open(cfg, newline='', encoding='utf-8') as f:
+                    for r in csv.DictReader(f):
+                        key   = (r.get('key') or '').strip().lower()
+                        label = (r.get('label') or '').strip()
+                        csvrel= (r.get('csv') or '').strip()
+                        inc   = (r.get('include') or '1').strip()
+                        order = (r.get('order') or '100').strip()
+                        # allow csv to be relative to data/
+                        full = _abs(csvrel if os.path.isabs(csvrel) else os.path.join('data', csvrel))
+                        _push(key, label, full if csvrel else '', inc, order)
+            except Exception as e:
+                print('[ScanAndBuildMaskMenu] config read error:', e)
 
         # Discover masks on disk
         disc = []
