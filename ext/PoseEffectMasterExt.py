@@ -28,11 +28,12 @@ class PoseEffectMasterExt:
     def ApplyFilter(self):
         """Ask the child landmarkSelect to rebuild its Select CHOP pattern."""
         debug("ApplyFilter called" )
-        ls = self.owner.op('landmarkSelect')
+        #ls = self.owner.op('landmarkSelect')
+        ls = op('landmarkSelect')
         if ls and hasattr(ls.ext, 'LandmarkSelectExt'):
             ls.ext.LandmarkSelectExt.Rebuild()
         else:
-            debug(f"{self.name} LandmarkSelect not found or missing ext: {ls}")
+            debug(f"{op('.').name} LandmarkSelect not found or missing ext: {ls}")
 
     def ResolveMenuCSV(self, key: str) -> str:
         """Delegate menu CSV lookup to the PoseEfxSwitch parent."""
@@ -47,5 +48,5 @@ class PoseEffectMasterExt:
         debug("OnStart called, wtf we supposed to do here?" )
         # do things when the clone starts.
         # most importantly, be sure the fx_params are taken care of
-        self.owner.op('fxCore').op('ensure_fx_pars').ensure()
+        #self.owner.op('fxCore').op('ensure_fx_pars').ensure()
         

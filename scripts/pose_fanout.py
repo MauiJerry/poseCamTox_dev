@@ -299,7 +299,7 @@ def onCook(scriptOp):
                         arg_vals.append(vv)
             line = f"{addr}  {' '.join(arg_vals)}"
             # logger.debug(line)
-            print(line) # For Textport debugging
+            #print(line) # For Textport debugging
             snap.append(line)
 
         # -- grab metadata to local variables
@@ -406,7 +406,7 @@ def onCook(scriptOp):
     if meta_updated and frame_count is not None:
         _upsert_meta('frame_count', int(frame_count))
 
-    debug(f"pose_fanout: Channel adds: {count_chanAdds}, Meta adds: {count_metaAdds}")
+    #debug(f"pose_fanout: Channel adds: {count_chanAdds}, Meta adds: {count_metaAdds}")
     
     if LOG_BUNDLES:
 

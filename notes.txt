@@ -200,3 +200,16 @@ copy the PoseCamTox_Dev osc_in to the others so they all work on latest output o
 
 test renamed to poseOSCInTest.toe, copied in from Tox_Dev
 it works. other old examples dont work due to more downstream errors
+
+side note on whole Pose2Art...
+there is a MediaPipe plugin for TD that is pretty sweet.
+https://github.com/torinmb/mediapipe-touchdesigner
+several good tutorials on how to use it
+like these
+
+https://www.youtube.com/watch?v=Cx4Ellaj6kk
+https://www.youtube.com/watch?v=7o960C7nXSY
+https://www.youtube.com/watch?v=xFAaDeRJGcc
+
+lets get dots working then review where we are
+
