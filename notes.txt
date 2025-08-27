@@ -192,3 +192,11 @@ got the _Dots/fxCore working and at top added proper composite/switch stuff to a
 
 now go figure why it is upside down and wrong scale
 
+--- 
+oscin test .toe doesnt work - too crude, needs update
+Osc_TrackHands changed to poseOsc_TrackHands so it all start with pose...
+
+copy the PoseCamTox_Dev osc_in to the others so they all work on latest output of PoseCamPC
+
+test renamed to poseOSCInTest.toe, copied in from Tox_Dev
+it works. other old examples dont work due to more downstream errors
