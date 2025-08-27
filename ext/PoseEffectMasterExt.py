@@ -29,7 +29,7 @@ class PoseEffectMasterExt:
         """Ask the child landmarkSelect to rebuild its Select CHOP pattern."""
         debug("ApplyFilter called" )
         #ls = self.owner.op('landmarkSelect')
-        ls = op('landmarkSelect')
+        ls = self.op('landmarkSelect')
         if ls and hasattr(ls.ext, 'LandmarkSelectExt'):
             ls.ext.LandmarkSelectExt.Rebuild()
         else:

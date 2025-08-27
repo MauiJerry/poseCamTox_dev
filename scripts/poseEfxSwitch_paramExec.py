@@ -46,8 +46,8 @@ def onValueChange(name1par, prev):
         op('.').ext.PoseEfxSwitchExt.OnActiveEffectChanged()
     elif name1 == 'activeindex':
         op('.').ext.PoseEfxSwitchExt.OnActiveIndexChanged()
-    elif name1 == 'rebuildfefectsMenu':
-        op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
+    # elif name1 == 'rebuildfefectsMenu':
+    #     op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
     else:
         debug(f'[parexec1] onValueChange: unhandled param {par.name} {name_l}')
     return True
@@ -69,8 +69,8 @@ def onPulse(par):
     if name_l == 'rebuildeffectsmenu':
         op('.').ext.PoseEfxSwitchExt.BuildEffectsMenu()
 
-    if name_l == 'scanlandmarkmasks':
-        op('.').ext.PoseEfxSwitchExt.ScanAndBuildMaskMenu()
+    # if name_l == 'scanlandmarkmasks':
+    #     op('.').ext.PoseEfxSwitchExt.ScanAndBuildMaskMenu()
 
     return True
 
