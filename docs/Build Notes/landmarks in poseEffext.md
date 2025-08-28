@@ -1,5 +1,9 @@
 Landmark filter rearchitect
 
+this took a bit to get working and still isnt right as of 28 aug.  It currently works with the Default Filter param added to the LandmarkSelect Component.  The menu is not working.
+
+back to figuring out why dots dont match with those coming thru PoseCamPC ndi.
+
 Got it—let’s silo the Landmark Filter so only PoseEffect_Dots owns it, and strip out anything in PoseEfxSwitch and PoseEffectMaster that touches it.
 
 What we’re doing
@@ -185,14 +189,14 @@ def load_filter_menu(compOwner=None):
             # If user typed "project.folder + '/…/file.csv'"
             # safer to evaluate in TD expressions; here keep simple:
             csv_path = eval(raw_path, {'project': project})  # noqa
-
+    
         csv_path = os.path.normpath(csv_path)
-
+    
         if not os.path.isfile(csv_path):
             debug(f"[PoseEffect_Dots] Landmark CSV not found: {csv_path}")
             _write_table(owner.op('landmark_menu'), [['full','All Landmarks']])
             return
-
+    
         rows = []
         with open(csv_path, 'r', newline='', encoding='utf-8') as f:
             rdr = csv.reader(f)
@@ -205,18 +209,18 @@ def load_filter_menu(compOwner=None):
                 # no header; use the row we just read as data if it has >=2 cols
                 if header and len(header) >= 2:
                     rows.append([header[0], header[1]])
-
+    
             for r in rdr:
                 if len(r) >= 2 and r[0] and r[1]:
                     rows.append([r[0], r[1]])
-
+    
         if not rows:
             debug("[PoseEffect_Dots] CSV empty or invalid; writing default menu.")
             rows = [['full','All Landmarks']]
-
+    
         _write_table(owner.op('landmark_menu'), rows)
         debug(f"[PoseEffect_Dots] Loaded {len(rows)} filter entries from CSV.")
-
+    
     except Exception as e:
         debug(f"[PoseEffect_Dots] Error loading filter CSV: {e}")
         _write_table(owner.op('landmark_menu'), [['full','All Landmarks']])
@@ -500,20 +504,20 @@ def load_filter_list(owner=None):
                 has_header = (h0 in ('key','name') and h1 == 'label' and h2 == 'csv')
             else:
                 header = None
-
+    
             if not has_header and header and len(header) >= 3:
                 rows.append([header[0], header[1], header[2]])
-
+    
             for r in rdr:
                 if len(r) >= 3 and r[0] and r[1] and r[2]:
                     rows.append([r[0].strip(), r[1].strip(), r[2].strip()])
     except Exception as e:
         debug(f"[PoseEffect_Dots] Manifest read error: {e}")
-
+    
     if not rows:
         debug("[PoseEffect_Dots] Manifest empty/invalid. Seeding one default entry.")
         rows = [['full','All Landmarks','landmarks_full.csv']]
-
+    
     _write_rows(comp.op('filter_list'), rows)
     debug(f"[PoseEffect_Dots] Loaded {len(rows)} filter list entries.")
 
@@ -538,7 +542,7 @@ def load_active_filter(owner=None):
             c = row[2].val.strip()
             if k:
                 csv_map[k] = c
-
+    
     csv_name = csv_map.get(key)
     if not csv_name:
         # Fallback to first entry
@@ -546,14 +550,14 @@ def load_active_filter(owner=None):
         csv_name = first[2].val.strip()
         comp.par.Activefilter = first[0].val.strip()
         debug(f"[PoseEffect_Dots] ActiveFilter '{key}' not found. Fell back to '{comp.par.Activefilter.eval()}'")
-
+    
     # Resolve CSV path in /data if relative
     if not os.path.isabs(csv_name):
         csv_path = os.path.join(_project_data_path(), csv_name)
     else:
         csv_path = csv_name
     csv_path = _norm(csv_path)
-
+    
     # Read per-filter CSV -> landmark_menu (2 cols)
     rows = []
     try:
@@ -567,20 +571,20 @@ def load_active_filter(owner=None):
                 has_header = (h0 in ('key','name') and h1 == 'label')
             else:
                 header = None
-
+    
             if not has_header and header and len(header) >= 2:
                 rows.append([header[0], header[1]])
-
+    
             for r in rdr:
                 if len(r) >= 2 and r[0] and r[1]:
                     rows.append([r[0].strip(), r[1].strip()])
     except Exception as e:
         debug(f"[PoseEffect_Dots] Filter CSV read error ({csv_path}): {e}")
-
+    
     if not rows:
         debug("[PoseEffect_Dots] Filter CSV empty/invalid; writing default.")
         rows = [['full','All Landmarks']]
-
+    
     _write_rows(comp.op('landmark_menu'), rows)
     debug(f"[PoseEffect_Dots] Loaded {len(rows)} landmark entries from {os.path.basename(csv_path)}")
 

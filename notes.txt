@@ -241,3 +241,5 @@ add check to insure not adding data/ if already there.
 
 and it works, with forced Default filter.
 menu still not correct, or i havent tested it
+
+now back to how to get points to match up with incoming points
