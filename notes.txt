@@ -221,3 +221,5 @@ This was something shared at the EfxSwitch level,
 we are not concerned at this time with speed, memory so if it all gets duplicated then so be it.
 we fix that later.
 
+4p 27 aug
+made bunch of changes for landmark filter. check in to git then rerun and see if it works

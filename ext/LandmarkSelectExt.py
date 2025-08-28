@@ -2,27 +2,29 @@
 LandmarkSelectExt: An extension for managing landmark channel filtering.
 
 This extension is designed to be placed on a component that contains:
+- Custom Parameters:
+  - 'Landmarkfiltermenu' (Menu): Selects the active filter.
+  - 'Currentfilter' (String): A read-only parameter reflecting the active filter.
+  - 'Customfiltercsv' (String): Path to a landmark list csv for use when menu is Custom
+  - 'Rebuildmenu' (Pulse): Triggers a rebuild of the menu.
 - A 'switch1' CHOP (to bypass or engage filtering)
 - A 'select1' CHOP (to select landmark channels by name)
-- A 'landmark_mask' Table DAT (to hold the list of active landmark names)
+- A 'landmark_filter' Table DAT (to hold the list of active landmark names)
+- A 'LandmarkFilterMenu_csv' Table DAT (the menu source, populated from the manifest CSV)
 
-It works in conjunction with a master 'landmark filter menu' DAT, which is a
-manifest of available filters (e.g., 'full', 'upper_body') and the CSV
-files associated with them.
-
-Primary Method: LoadMask()
-- Reads a 'Mask' parameter from its owner.
-- If the mask is 'all' or empty, it bypasses the filter.
-- Otherwise, it looks up the mask name in the menu DAT to find a CSV file.
-- It loads the landmark names from that CSV into the 'landmark_mask' DAT.
+Primary Method: LoadActiveFilter()
+- Reads the 'Landmarkfiltermenu' parameter from its owner.
+- If the filter is 'all' or empty, it bypasses the filter.
+- Otherwise, it looks up the filter name in the 'LandmarkFilterMenu_csv' DAT to find a CSV file.
+- It loads the landmark names from that CSV into the 'landmark_filter' DAT.
 - It generates a channel name pattern (e.g., "p*_nose_x p*_nose_y ...") and
   configures the 'select1' CHOP.
 - It activates the 'switch1' CHOP to use the filtered channel set.
 
 Integration:
-- An Execute DAT's onStart() should call self.owner.ext.LandmarkSelectExt.Initialize().
-- A Parameter Execute DAT should monitor the owner's 'Mask' parameter and call
-  self.owner.ext.LandmarkSelectExt.LoadMask() on change.
+- An Execute DAT's onStart() should call owner.ext.LandmarkSelectExt.Initialize().
+- A Parameter Execute DAT should monitor 'Landmarkfiltermenu' and 'Rebuildmenu'
+  to call LoadActiveFilter() and RebuildMenu() respectively.
 """
 
 import os
@@ -39,102 +41,137 @@ class LandmarkSelectExt:
         Args:
             ownerComp (COMP): The component this extension is attached to.
         """
-        self.owner = ownerComp
-        # A re-entrancy guard to prevent feedback loops if LoadMask is called rapidly
+        self.owner = ownerComp        
+        # A re-entrancy guard to prevent feedback loops if LoadActiveFilter is called rapidly
         self._loading = False
+
+        # --- Cache references to operators and parameters for performance and clarity ---
+        self.switchChop = self.owner.op('switch1')
+        self.selectChop = self.owner.op('select1')
+        self.filter_tableDat = self.owner.op('landmark_filter')
+        self.menu_dat = self.owner.op('LandmarkFilterMenu_csv')
+        
+        self.filter_par = self.owner.par.Landmarkfiltermenu
+        self.current_filter_par = self.owner.par.Currentfilter
+        self.csv_path_par = self.owner.par.Customfiltercsv
+
+        self.is_valid = False
+        self._validate_ops()
+
         debug(f"LandmarkSelectExt initialized on {ownerComp.path}")
+
+    def _validate_ops(self):
+        """
+        Checks if all cached operator and parameter references are still valid.
+        This makes the component robust against live-editing changes like renaming.
+        Updates self.is_valid and returns the new state.
+        """
+        required = [
+            ('switch1', self.switchChop),
+            ('select1', self.selectChop),
+            ('landmark_filter', self.filter_tableDat),
+            ('LandmarkFilterMenu_csv', self.menu_dat),
+            ('Landmarkfiltermenu', self.filter_par),
+            ('Currentfilter', self.current_filter_par),
+            ('Customfiltercsv', self.csv_path_par),
+        ]
+
+        for name, op_or_par in required:
+            # The .valid attribute works for both OPs and Par objects
+            if not op_or_par or not op_or_par.valid:
+                if self.is_valid: # Only log the error on the first failure
+                    debug(f"ERROR: LandmarkSelectExt on {self.owner.path} has an invalid reference to '{name}'. It will be disabled until fixed.")
+                self.is_valid = False
+                return False
+        
+        self.is_valid = True
+        return True
 
     def Initialize(self):
         """
         A method to be called from an onStart() or onCreate() callback.
-        Ensures the initial mask state is loaded correctly.
+        Rebuilds the menu and ensures the initial filter state is loaded correctly.
         """
         debug(f"[{self.owner.name}] Initialize called")
-        self.LoadMask()
+        self.RebuildMenu()
 
-    def LoadMask(self):
+    def LoadActiveFilter(self):
         """
-        Loads the landmark mask based on the owner's 'Mask' parameter.
+        Loads the landmark filter csv based on the owner's 'Landmarkfiltermenu' parameter.
 
         This is the main entry point for updating the filter. It finds the
         correct landmark list, populates the local mask table, and sets up
         the CHOP network to filter the incoming pose data.
         """
-        debug(f"[{self.owner.name}] LoadMask called")
+        debug(f"[{self.owner.name}] LoadActiveFilter called")
+
+        # Re-validate on every call to protect against live-editing changes.
+        if not self._validate_ops():
+            return
+
         if self._loading:
             return
         self._loading = True
         try:
-            self._load_mask_internal()
+            self._load_filter_internal()
         finally:
             self._loading = False
 
-    def _load_mask_internal(self):
-        """Internal implementation of LoadMask to be wrapped by a guard."""
-        owner = self.owner
-
-        # --- 1. Locate required operators and parameters ---
-        try:
-            switchChop = owner.op('switch1')  # The CHOP that switches between pass-through and filtered
-            selectChop = owner.op('select1') # The CHOP that selects landmark channels by name
-            mask_tableDat = owner.op('landmark_mask')
-            menu_dat = owner.op('LandmarkFilterMenu_csv')
-            # The parameter pointing to the master menu DAT
-            mask_par = owner.par.Mask
-        except Exception as e:
-            debug(f"ERROR: LandmarkSelectExt could not find a required OP or parameter on {owner.path}: {e}")
+    def _set_pass_through_mode(self, reason=""):
+        """Helper to configure the component for pass-through mode."""
+        if not self.is_valid:
             return
 
-        if not all([switchChop, selectChop, mask_tableDat, menu_dat, mask_par]):
-            debug(f"ERROR: LandmarkSelectExt on {owner.path} is missing required operators.")
+        if reason:
+            debug(f"[{self.owner.name}] {reason}, setting to pass-through.")
+        
+        if self.switchChop.par.index != 0:
+            self.switchChop.par.index = 0
+        if not self.selectChop.bypass:
+            self.selectChop.bypass = True
+            
+        # Clear the table but keep the header for clarity
+        if self.filter_tableDat.numRows > 1 or self.filter_tableDat.numCols == 0:
+            self.filter_tableDat.clear()
+            self.filter_tableDat.appendRow(['name'])
+
+    def _load_filter_internal(self):
+        """Internal implementation of LoadActiveFilter to be wrapped by a guard."""
+        if not self.is_valid:
             return
 
-        # --- 2. Get current mask name ---
-        mask_name = (mask_par.eval() or '').strip().lower()
+        # --- 2. Get current filter name from the menu parameter ---
+        filter_name = (self.filter_par.eval() or '').strip().lower()
 
-        # --- 3. Handle pass-through case for 'all' or empty mask ---
-        if not mask_name or mask_name == 'all':
-            debug(f"[{owner.name}] Mask is '{mask_name}', setting to pass-through.")
-            if switchChop.par.index != 0:
-                switchChop.par.index = 0
-            if not selectChop.bypass:
-                selectChop.bypass = True
-            # Clear the table but keep the header for clarity
-            if mask_tableDat.numRows > 1 or mask_tableDat.numCols == 0:
-                mask_tableDat.clear()
-                mask_tableDat.appendRow(['name'])
+        # Update the read-only Currentfilter parameter for display
+        if self.current_filter_par.eval() != filter_name:
+            self.current_filter_par.val = filter_name
+
+        # --- 3. Handle pass-through case for 'all' or empty filter ---
+        if not filter_name or filter_name == 'all':
+            self._set_pass_through_mode(f"Filter is '{filter_name}'")
             return
-        # not all, so load the mask table
         
         # --- 4. Look up CSV filename in the menu DAT ---
-        csv_filename = self._find_csv_for_mask(mask_name, menu_dat)
+        csv_filename = self._find_csv_for_filter(filter_name, self.menu_dat)
 
         if not csv_filename:
-            debug(f"WARNING: Mask key '{mask_name}' not found in {menu_dat.path}. Falling back to pass-through.")
-            # go back to pass-through
-            if switchChop.par.index != 0:
-                switchChop.par.index = 0
-            if not selectChop.bypass:
-                selectChop.bypass = True
+            self._set_pass_through_mode(f"Filter key '{filter_name}' not found in {self.menu_dat.path}")
             return
 
         # --- 5. Read the landmark names from the specified CSV ---
         landmark_names = self._read_landmarks_from_csv(csv_filename)
 
         if landmark_names is None: # Indicates an error during file read
-            debug(f"WARNING: Failed to read landmarks from '{csv_filename}'. Falling back to pass-through.")
-            if switchChop.par.index != 0:
-                switchChop.par.index = 0
-            if not selectChop.bypass:
-                selectChop.bypass = True
+            self._set_pass_through_mode(f"Failed to read landmarks from '{csv_filename}'")
             return
 
-        # --- 6. Populate the local 'landmark_mask' Table DAT ---
+        # --- 6. Populate the local 'landmark_filter' Table DAT ---
         # note the DAT is just for reference. The Select CHOP uses patterns.
-        mask_tableDat.clear()
-        mask_tableDat.appendRow(['name'])
+        self.filter_tableDat.clear()
+        self.filter_tableDat.appendRow(['name'])
         for name in landmark_names:
-            mask_tableDat.appendRow([name])
+            self.filter_tableDat.appendRow([name])
 
         # --- 7. Configure the 'select1' CHOP with channel patterns ---
         # A Select CHOP uses channel name patterns, not a DAT reference.
@@ -148,23 +185,71 @@ class LandmarkSelectExt:
         pattern = ' '.join(expanded_names)
 
         # a space-separated list of channel names pushed into the select CHOP
-        if selectChop.par.channames.eval() != pattern:
-            selectChop.par.channames = pattern
+        if self.selectChop.par.channames.eval() != pattern:
+            self.selectChop.par.channames = pattern
 
         # --- 8. Activate the filter path in the CHOP network ---
-        if selectChop.bypass:
-            selectChop.bypass = False
-        if switchChop.par.index != 1:
-            switchChop.par.index = 1
+        if self.selectChop.bypass:
+            self.selectChop.bypass = False
+        if self.switchChop.par.index != 1:
+            self.switchChop.par.index = 1
 
-        debug(f"[{owner.name}] Loaded mask '{mask_name}' with {len(landmark_names)} landmarks.")
+        debug(f"[{self.owner.name}] Loaded filter '{filter_name}' with {len(landmark_names)} landmarks.")
 
-    def _find_csv_for_mask(self, mask_name, menu_dat):
-        """Looks up a mask key in the menu DAT and returns the csv filename."""
+    def RebuildMenu(self):
+        """
+        Rebuilds the landmark filter menu from the source CSV file.
+        Reads the path from the 'Customfiltercsv' parameter, loads the CSV,
+        and populates the menu source DAT ('LandmarkFilterMenu_csv').
+        """
+        # Re-validate on every call to protect against live-editing changes.
+        if not self._validate_ops():
+            return
+
+        if not self.is_valid:
+            return
+
+        debug(f"[{self.owner.name}] RebuildMenu called")
+
+        csv_path = self.csv_path_par.eval()
+        if not csv_path:
+            debug(f"WARNING: 'Customfiltercsv' parameter is empty. Cannot rebuild menu.")
+            self.menu_dat.clear()
+            self.menu_dat.appendRow(['key', 'label', 'csv'])
+            return
+
+        if not os.path.isabs(csv_path):
+            csv_path = os.path.normpath(os.path.join(project.folder, csv_path))
+
+        if not os.path.isfile(csv_path):
+            debug(f"ERROR: Menu manifest CSV not found: {csv_path}")
+            self.menu_dat.clear()
+            self.menu_dat.appendRow(['key', 'label', 'csv'])
+            return
+
+        try:
+            with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                self.menu_dat.clear()
+                for row in reader:
+                    self.menu_dat.appendRow(row)
+            debug(f"[{self.owner.name}] Rebuilt menu from {csv_path} with {self.menu_dat.numRows} entries.")
+        except Exception as e:
+            debug(f"ERROR: Failed to read or parse menu manifest CSV {csv_path}: {e}")
+            # Clear the menu to avoid using stale data
+            self.menu_dat.clear()
+            self.menu_dat.appendRow(['key', 'label', 'csv'])
+            return
+
+        # After rebuilding, reload the current filter to ensure consistency.
+        self.LoadActiveFilter()
+
+    def _find_csv_for_filter(self, filter_name, menu_dat):
+        """Looks up a filter key in the menu DAT and returns the csv filename."""
         # Assumes menu_dat has columns: key, label, csv
         for i in range(menu_dat.numRows):
             key_cell = menu_dat[i, 0]
-            if key_cell is not None and key_cell.val.strip().lower() == mask_name:
+            if key_cell is not None and key_cell.val.strip().lower() == filter_name:
                 csv_cell = menu_dat[i, 2]
                 if csv_cell is not None:
                     return csv_cell.val.strip()
@@ -179,23 +264,23 @@ class LandmarkSelectExt:
             debug(f"ERROR: Landmark CSV file not found: {csv_path}")
             return None
 
-        landmark_names = []
         try:
             with open(csv_path, 'r', newline='', encoding='utf-8') as f:
                 reader = csv.reader(f)
-                header = next(reader, None)
-                # Check for a header row (e.g., 'key', 'name') and skip it
-                if header and header[0].strip().lower() in ('key', 'name'):
-                    pass
-                # If it wasn't a header, treat it as the first data row
-                elif header and header[0].strip():
-                    landmark_names.append(header[0].strip())
+                # Read all non-empty rows from the CSV
+                all_rows = [row for row in reader if row and row[0].strip()]
+                if not all_rows:
+                    return [] # Handle empty or effectively empty files
 
-                # Read the first column of all subsequent rows
-                for row in reader:
-                    if row and row[0].strip():
-                        landmark_names.append(row[0].strip())
-            return landmark_names
+                # Check if the first row is a header and should be skipped
+                first_cell = all_rows[0][0].strip().lower()
+                if first_cell in ('key', 'name', 'landmark'):
+                    data_rows = all_rows[1:]
+                else:
+                    data_rows = all_rows
+                
+                # Extract the first column from the data rows
+                return [row[0].strip() for row in data_rows]
         except Exception as e:
             debug(f"ERROR: Failed to read or parse landmark CSV {csv_path}: {e}")
             return None
