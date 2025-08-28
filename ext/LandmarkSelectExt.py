@@ -41,7 +41,9 @@ class LandmarkSelectExt:
         Args:
             ownerComp (COMP): The component this extension is attached to.
         """
-        self.owner = ownerComp        
+        self.owner = ownerComp   
+        debug(f"LandmarkSelectExt __init__ called for {ownerComp.name}" )
+             
         # A re-entrancy guard to prevent feedback loops if LoadActiveFilter is called rapidly
         self._loading = False
 

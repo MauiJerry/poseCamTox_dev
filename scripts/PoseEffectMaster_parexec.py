@@ -2,6 +2,10 @@
 # This DAT lives inside each PoseEffect_* (via the master clone source).
 # It calls the effect's extension to rebuild landmark selection or toggle cooking.
 
+# this is currently not used. It was intended to keep landmark values in this Container consistent with
+# those in the fxCore.  The binding and clone logic was wrong so we disabled cloning for now.
+# and this Op's Bypass flag is on
+
 BUSY_KEY = '_parexec_busy'
 
 # ------------------------

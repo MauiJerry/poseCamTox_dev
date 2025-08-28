@@ -2,6 +2,9 @@
 
 # Canvas defaults that should trigger a guarded meta rebuild (if you use one)
 
+from doctest import debug
+
+
 CANVAS_PARAMS = {'defaultcanvasw', 'defaultcanvash'} # compare lower case
 
 # Optional pulse param name to force a manual refresh
@@ -9,7 +12,9 @@ PULSE_REFRESH_META = 'refreshmeta'
 PULSE_REBUILD_MENU = 'rebuildeffectsmenu'  # if your parm is "RebuildEffectsMenu", this still matches
 
 def onStart():
-    debug('[parexec1] onStart')
+    debug("PoseEffectSwitch_parexec1 onStart() called")
+    op('.').ext.PoseEfxSwitchExt.Initialize()
+
     return True
     
 def _norm(s): 
@@ -31,7 +36,7 @@ def onValueChange(name1par, prev):
     """Called when any watched parameter's value changes."""
     name_l = _norm(getattr(par, 'tupletName', '') or par.name)
 
-    debug(f'[parexec1] onValueChange: {par.name} {name1} from {prev} to {par.eval()}')
+    debug(f'[PoseEffectSwitch_parexec1] onValueChange: {par.name} {name1} from {prev} to {par.eval()}')
     
     if par is None:
         return True
@@ -60,7 +65,7 @@ def onPulse(par):
     # use this for compare in case we mucked up capitalization of Parameter names
     name_l = _norm(getattr(par, 'tupletName', '') or par.name)
 
-    debug(f'[parexec1] onPulse: {par.name} {name_l}')
+    debug(f'[PoseEffectSwitch_parexec1] onPulse: {par.name} {name_l}')
 
     if name_l == PULSE_REFRESH_META:
         _update_guard()

@@ -5,6 +5,7 @@
 class PoseEffectMasterExt:
     def __init__(self, owner):
         self.owner = owner
+        debug(f"PoseEffectMasterExt __init__ called for {owner.name}" ) 
 
     def SetActive(self, active: bool):
         """Called by PoseEfxSwitch when this effect becomes (in)active."""
@@ -27,24 +28,22 @@ class PoseEffectMasterExt:
 
     def ApplyFilter(self):
         """Ask the child landmarkSelect to rebuild its Select CHOP pattern."""
-        debug("ApplyFilter called" )
+        debug("PoseEffect Ext ApplyFilter called" )
         #ls = self.owner.op('landmarkSelect')
-        ls = self.op('landmarkSelect')
-        if ls and hasattr(ls.ext, 'LandmarkSelectExt'):
-            ls.ext.LandmarkSelectExt.Rebuild()
+        landmarkSelectOp = self.op('landmarkSelect')
+        if landmarkSelectOp and hasattr(landmarkSelectOp.ext, 'LandmarkSelectExt'):
+            debug("PoseEffectMasterExt tell my landmarkSelect to Rebuild()")
+            landmarkSelectOp.ext.LandmarkSelectExt.Rebuild()
         else:
-            debug(f"{op('.').name} LandmarkSelect not found or missing ext: {ls}")
-
-    def ResolveMenuCSV(self, key: str) -> str:
-        """Delegate menu CSV lookup to the PoseEfxSwitch parent."""
-        debug(f"{self.name} ResolveMenuCSV called, does nothing" )
-        
-    
-
+            debug(f"{op('.').name} LandmarkSelect not found or missing ext: {landmarkSelectOp}")
 
     def OnStart(self):
-        debug("OnStart called, wtf we supposed to do here?" )
+        debug(f"PoseEffectMasterExt OnStart  called {self.owner.name}, wtf we supposed to do here?" )
         # do things when the clone starts.
-        # most importantly, be sure the fx_params are taken care of
-        #self.owner.op('fxCore').op('ensure_fx_pars').ensure()
-        
+        # insure the landmarkSelect component is setup
+        landmarkSelectOp = self.op('landmarkSelect')
+        if landmarkSelectOp and hasattr(landmarkSelectOp.ext, 'LandmarkSelectExt'):
+            landmarkSelectOp.ext.LandmarkSelectExt.Setup()
+        else:
+            debug(f"{op('.').name} LandmarkSelect not found or missing ext: {landmarkSelectOp}")  
+            

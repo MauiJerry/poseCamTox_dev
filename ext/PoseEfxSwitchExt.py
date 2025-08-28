@@ -42,7 +42,7 @@ class PoseEfxSwitchExt:
         Args:
             owner (COMP): The component this extension is attached to.
         """
-        debug("db init PoseEfxSwitchExt")
+        debug("init PoseEfxSwitchExt")
         self.owner = owner
         self._syncing = False  # Re-entrancy guard to prevent parameter feedback loops.
         # _mask_dispatch is a placeholder for future mask management logic.
@@ -51,7 +51,7 @@ class PoseEfxSwitchExt:
     # ===== Lifecycle ==========================================================
     def Initialize(self):
         """Called by the embedded Execute DAT on project start."""
-        debug("db Initialize PoseEfxSwitchExt")
+        debug("Initialize PoseEfxSwitchExt")
         
         self.BuildEffectsMenu()
 
@@ -72,7 +72,7 @@ class PoseEfxSwitchExt:
         Values = OP names (stable). Labels = parent.par.UiDisplayName if set,
         else derived from OP name ("PoseEffect_Dots2" -> "Dots 2").
         """
-        debug("db BuildEffectsMenu PoseEfxSwitchExt")
+        debug("BuildEffectsMenu PoseEfxSwitchExt")
         keys, labels = [], []
         for fx in self._effects():
             key = fx.name  # OP name is the stable key
@@ -115,7 +115,7 @@ class PoseEfxSwitchExt:
         Synchronizes the 'ActiveIndex' parameter to match the new effect selection.
         This uses a re-entrancy guard to prevent infinite loops with OnActiveIndexChanged.
         """
-        debug("db OnActiveEffectChanged PoseEfxSwitchExt")
+        debug("OnActiveEffectChanged PoseEfxSwitchExt")
         if self._syncing:
             return  # Avoid feedback loop if change was triggered by OnActiveIndexChanged
 
@@ -143,7 +143,7 @@ class PoseEfxSwitchExt:
         Synchronizes the 'ActiveEffect' (menu) parameter to match the new index.
         This uses a re-entrancy guard to prevent infinite loops with OnActiveEffectChanged.
         """
-        debug("db OnActiveIndexChanged PoseEfxSwitchExt")
+        debug("OnActiveIndexChanged PoseEfxSwitchExt")
         if self._syncing:
             return  # Avoid feedback loop if change was triggered by OnActiveEffectChanged
 
@@ -167,7 +167,7 @@ class PoseEfxSwitchExt:
 
     def SetActiveEffect(self, key: str):
         """Programmatic activation by OP name (updates both params + activation)."""
-        debug("db SetActiveEffect PoseEfxSwitchExt", key)
+        debug("SetActiveEffect PoseEfxSwitchExt", key)
         key = (key or '').strip()
         keys = self._menuKeys()
         if not keys:
@@ -180,7 +180,7 @@ class PoseEfxSwitchExt:
         """
         Activate exactly one PoseEffect_* and route out_switch to that index.
         """
-        debug("db SetActiveIndex PoseEfxSwitchExt", idx)
+        debug("SetActiveIndex PoseEfxSwitchExt", idx)
         # Route output switch
         sw = self.owner.op('out_switch')
         if sw:
