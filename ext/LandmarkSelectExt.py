@@ -4,8 +4,9 @@ LandmarkSelectExt: An extension for managing landmark channel filtering.
 This extension is designed to be placed on a component that contains:
 - Custom Parameters:
   - 'Landmarkfiltermenu' (Menu): Selects the active filter.
+  - 'Defaultfilter' (String): Overrides the menu selection. If set, this filter is used.
   - 'Currentfilter' (String): A read-only parameter reflecting the active filter.
-  - 'Customfiltercsv' (String): Path to a landmark list csv for use when menu is Custom
+  - 'Customfiltercsv' (String): Path to a landmark list csv for use when menu is Custom.
   - 'Rebuildmenu' (Pulse): Triggers a rebuild of the menu.
 - A 'switch1' CHOP (to bypass or engage filtering)
 - A 'select1' CHOP (to select landmark channels by name)
@@ -13,12 +14,13 @@ This extension is designed to be placed on a component that contains:
 - A 'LandmarkFilterMenu_csv' Table DAT (the menu source, populated from the manifest CSV)
 
 Primary Method: LoadActiveFilter()
-- Reads the 'Landmarkfiltermenu' parameter from its owner.
+- Determines the active filter, prioritizing the 'Defaultfilter' parameter over the
+  'Landmarkfiltermenu' selection.
 - If the filter is 'all' or empty, it bypasses the filter.
 - Otherwise, it looks up the filter name in the 'LandmarkFilterMenu_csv' DAT to find a CSV file.
-- It loads the landmark names from that CSV into the 'landmark_filter' DAT.
-- It generates a channel name pattern (e.g., "p*_nose_x p*_nose_y ...") and
-  configures the 'select1' CHOP.
+- It loads the landmark names from that CSV into the 'landmark_filter' DAT for inspection.
+- It generates a channel name pattern (e.g., "nose* mouth_left* ...") and
+  configures the 'select1' CHOP to select all matching channels (e.g., p1_nose_x, p1_nose_y).
 - It activates the 'switch1' CHOP to use the filtered channel set.
 
 Integration:
@@ -158,6 +160,7 @@ class LandmarkSelectExt:
         
         self._loading = True
         try:
+            debug("try loading internal")
             self._load_filter_internal()
         finally:
             self._loading = False
@@ -192,20 +195,24 @@ class LandmarkSelectExt:
 
     def _load_filter_internal(self):
         """Internal implementation of LoadActiveFilter to be wrapped by a guard."""
+        
+        debug(f"[{self.owner.name}] _load_filter_internal starting")
+
         if not self.is_valid:
             debug(f"[{self.owner.name}] LoadActiveFilter not is_valid")
             return 0
 
         # --- 1. Debug menu contents as requested ---
-        debug(f"Filter Menu Parameter '{self.filtermenu_par.name}' contents:")
-        debug(f"  - Menu Names: {self.filtermenu_par.menuNames}")
-        debug(f"  - Menu Labels: {self.filtermenu_par.menuLabels}")
-        debug(f"  - Current Value: {self.filtermenu_par.eval()}")
+        print(f"Filter Menu Parameter '{self.filtermenu_par.name}' contents:")
+        print(f"  - Menu Names: {self.filtermenu_par.menuNames}")
+        print(f"  - Menu Labels: {self.filtermenu_par.menuLabels}")
+        print(f"  - Current Value: {self.filtermenu_par.eval()}")
 
         # --- 2. Determine the active filter name, using 'Defaultfilter' as an override ---
         default_filter_override = (self.defaultfilter_par.eval() or '').strip().lower()
+        debug(f"Defaultfilter parameter value: '{default_filter_override}'" )
         
-        if default_filter_override and default_filter_override != 'all':
+        if default_filter_override:
             filter_name = default_filter_override
             debug(f"Using override filter from 'Defaultfilter' parameter: '{filter_name}'")
         else:
@@ -215,7 +222,9 @@ class LandmarkSelectExt:
         # Update the read-only Currentfilter parameter for display
         if self.current_filter_par.eval() != filter_name:
             self.current_filter_par.val = filter_name
+            debug(f"Updated 'Currentfilter' parameter to: {filter_name}")
 
+        debug(f"b4 3 Active filter name determined: '{filter_name}'")
         # --- 3. Handle pass-through case for 'all' or empty filter ---
         if not filter_name or filter_name == 'all':
             self._set_pass_through_mode(True, reason=f"Filter is '{filter_name}'")
@@ -224,9 +233,10 @@ class LandmarkSelectExt:
 
         # --- 4. Look up CSV filename in the menu DAT ---
         csv_filename = self._find_csv_for_filter(filter_name, self.menu_dat)
-
+        debug(f"Lookup CSV for filter '{filter_name}' found: '{csv_filename}'" )        
         if not csv_filename:
             self._set_pass_through_mode(True, reason=f"Filter key '{filter_name}' not found in {self.menu_dat.path}")
+            debug(f"[{self.owner.name}] failed - csv_filename null")
             return 1
 
         # --- 5. Read the landmark names from the specified CSV ---
@@ -235,6 +245,7 @@ class LandmarkSelectExt:
         if landmark_names is None: # Indicates an error during file read
             self._set_pass_through_mode(True, reason=f"Failed to read landmarks from '{csv_filename}'")
             return 1
+        
 
         # --- 6. Populate the local 'landmark_filter' Table DAT ---
         # note the DAT is just for reference. The Select CHOP uses patterns.
@@ -246,20 +257,18 @@ class LandmarkSelectExt:
         # --- 7. Configure the 'select1' CHOP with channel patterns ---
         # A Select CHOP uses channel name patterns, not a DAT reference.
         # We generate this pattern from the loaded landmark names.
-        expanded_names = []
-        for name in landmark_names:
-            # The 'p*' wildcard will match any person ID (p1, p2, etc.)
-            base = f"p*_{name}"
-            expanded_names.extend([f"{base}_x", f"{base}_y", f"{base}_z"])
 
-        pattern = ' '.join(expanded_names)
+        pattern = ' '.join(landmark_names)
 
         # a space-separated list of channel names pushed into the select CHOP
         if self.selectChop.par.channames.eval() != pattern:
             self.selectChop.par.channames = pattern
+            debug(f"[{self.owner.name}] Updated select CHOP channel names to: {pattern}")   
+        else:
+            debug(f"[{self.owner.name}] Select CHOP channel names unchanged")
 
         # --- 8. Activate the filter path in the CHOP network ---
-        self._set_pass_through_mode(False, reason=f"Loaded filter '{filter_name}'")
+        self._set_pass_through_mode(False, reason=f"Successfully Loaded filter '{filter_name}'")
         debug(f"[{self.owner.name}] Loaded filter '{filter_name}' with {len(landmark_names)} landmarks.")
 
     def RebuildMenu(self):
@@ -340,14 +349,40 @@ class LandmarkSelectExt:
             if key_cell is not None and key_cell.val.strip().lower() == filter_name:
                 csv_cell = menu_dat[i, 2]
                 if csv_cell is not None:
+                    debug(f"Found CSV '{csv_cell.val.strip()}' for filter '{filter_name}'") 
                     return csv_cell.val.strip()
+        debug(f"Lookup CSV for filter {filter_name} not found")
         return None
 
     def _read_landmarks_from_csv(self, csv_filename):
-        """Reads the first column from a CSV file in the /data folder."""
-        # Construct path relative to project's /data folder
-        csv_path = os.path.normpath(os.path.join(project.folder, 'data', csv_filename))
+        """
+        Reads landmark names from a CSV file and prepares them as channel patterns.
 
+        The method performs the following steps:
+        1. Constructs a full path to the CSV, assuming it's in the project's /data
+           folder unless a 'data/' prefix is already present.
+        2. Reads all rows from the CSV.
+        3. Intelligently skips a header row if the first cell contains 'key', 'name',
+           or 'landmark' (case-insensitive).
+        4. Extracts the first column from the remaining rows.
+        5. Converts each landmark name into a wildcard pattern by appending a '*'
+           (e.g., 'nose' becomes 'nose*'). This allows the Select CHOP to match
+           all related channels like 'p1_nose_x', 'p1_nose_y', etc.
+
+        Args:
+            csv_filename (str): The name of the CSV file to read.
+
+        Returns:
+            list[str] or None: A list of landmark channel patterns, or None if the
+                               file cannot be read.
+        """
+        # If the filename already includes the 'data/' prefix, use it directly
+        # relative to the project folder. Otherwise, prepend 'data/'.
+        if csv_filename.startswith(('data/', 'data\\')):
+            csv_path = os.path.normpath(os.path.join(project.folder, csv_filename))
+        else:
+            csv_path = os.path.normpath(os.path.join(project.folder, 'data', csv_filename))
+            
         if not os.path.isfile(csv_path):
             debug(f"ERROR: Landmark CSV file not found: {csv_path}")
             return None
@@ -368,7 +403,11 @@ class LandmarkSelectExt:
                     data_rows = all_rows
                 
                 # Extract the first column from the data rows
-                return [row[0].strip() for row in data_rows]
+                rowData = [row[0].strip() for row in data_rows]
+                # Ensure each landmark name is a pattern ending with a wildcard '*'
+                # This is idempotent; it won't add a '*' if one already exists.
+                patterns = [name if name.endswith('*') else f'{name}*' for name in rowData]
+                return patterns
         except Exception as e:
             debug(f"ERROR: Failed to read or parse landmark CSV {csv_path}: {e}")
             return None
