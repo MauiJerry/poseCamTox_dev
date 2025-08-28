@@ -1,4 +1,4 @@
-﻿"""
+"""
 LandmarkSelectExt: An extension for managing landmark channel filtering.
 
 This extension is designed to be placed on a component that contains:
@@ -26,7 +26,6 @@ Integration:
 - A Parameter Execute DAT should monitor 'Landmarkfiltermenu' and 'Rebuildmenu'
   to call LoadActiveFilter() and RebuildMenu() respectively.
 """
-
 import os
 import csv
 
@@ -42,7 +41,7 @@ class LandmarkSelectExt:
             ownerComp (COMP): The component this extension is attached to.
         """
         self.owner = ownerComp   
-        debug(f"LandmarkSelectExt __init__ called for {ownerComp.name}" )
+        debug(f"LandmarkSelectExt __init__ called for {self.owner.name}" )
              
         # A re-entrancy guard to prevent feedback loops if LoadActiveFilter is called rapidly
         self._loading = False
@@ -52,15 +51,39 @@ class LandmarkSelectExt:
         self.selectChop = self.owner.op('select1')
         self.filter_tableDat = self.owner.op('landmark_filter')
         self.menu_dat = self.owner.op('LandmarkFilterMenu_csv')
-        
-        self.filter_par = self.owner.par.Landmarkfiltermenu
-        self.current_filter_par = self.owner.par.Currentfilter
-        self.csv_path_par = self.owner.par.Customfiltercsv
 
+        # During initialization, owner.pars() can sometimes fail to find custom parameters.
+        # A direct lookup in owner.customPars is more reliable.
+        self.filtermenu_par = self._lookup_custom_parameter('Landmarkfiltermenu')
+        self.current_filter_par = self._lookup_custom_parameter('Currentfilter')
+        self.customfiltercsv_par = self._lookup_custom_parameter('Customfiltercsv')
+        self.defaultfilter_par = self._lookup_custom_parameter('Defaultfilter')
+
+        print(f"list custom parameters of {self.owner.name}")
+        for p in self.owner.customPars:
+            print(f"{p.name} = {p.eval()}")
+            
         self.is_valid = False
         self._validate_ops()
+        
+        self.onExtensionReady()
 
-        debug(f"LandmarkSelectExt initialized on {ownerComp.path}")
+        debug(f"LandmarkSelectExt __init__ complete on {ownerComp.path}")
+
+    def _lookup_custom_parameter(self, name):
+        """
+        Searches owner's custom parameters for a parameter by name.
+        This is a robust alternative to owner.pars() during initialization.
+        
+        Args:
+            name (str): The name of the custom parameter to find.
+        """
+        for p in self.owner.customPars:
+            if p.name == name:
+                debug(f"Found custom parameter '{name}' on {self.owner.path}")
+                return p
+        debug(f"ERROR: Custom parameter '{name}' not found on {self.owner.path}")   
+        return None
 
     def _validate_ops(self):
         """
@@ -73,21 +96,37 @@ class LandmarkSelectExt:
             ('select1', self.selectChop),
             ('landmark_filter', self.filter_tableDat),
             ('LandmarkFilterMenu_csv', self.menu_dat),
-            ('Landmarkfiltermenu', self.filter_par),
+            ('Landmarkfiltermenu', self.filtermenu_par),
             ('Currentfilter', self.current_filter_par),
-            ('Customfiltercsv', self.csv_path_par),
+            ('Customfiltercsv', self.customfiltercsv_par),
+            ('Defaultfilter', self.defaultfilter_par),
         ]
+        # debug(f"_validate_ops called required is {required}" )
 
         for name, op_or_par in required:
-            # The .valid attribute works for both OPs and Par objects
-            if not op_or_par or not op_or_par.valid:
-                if self.is_valid: # Only log the error on the first failure
-                    debug(f"ERROR: LandmarkSelectExt on {self.owner.path} has an invalid reference to '{name}'. It will be disabled until fixed.")
+            # Use an explicit 'is None' check for robustness. This is clearer than
+            # an implicit boolean check and avoids ambiguity with "falsy" objects.
+            if op_or_par is None:
+                debug(f"ERROR: LandmarkSelectExt on {self.owner.path} could not find '{name}' (reference is None).")
                 self.is_valid = False
                 return False
-        
+            # If the reference exists, check if the underlying object is still valid.
+            if not op_or_par.valid:
+                debug(f"ERROR: LandmarkSelectExt on {self.owner.path} '{name}' is not valid")
+                self.is_valid = False
+                return False
         self.is_valid = True
+        debug("_validate_ops ok")
         return True
+
+    def onExtensionReady(self):
+        """
+        This method is called by TouchDesigner when the extension is ready.
+        """
+        debug(f"[{self.owner.name}] onExtensionReady: Initializing...")
+        self.Initialize()
+        debug(f"[{self.owner.name}] onExtensionReady complete.")
+
 
     def Initialize(self):
         """
@@ -96,6 +135,7 @@ class LandmarkSelectExt:
         """
         debug(f"[{self.owner.name}] Initialize called")
         self.RebuildMenu()
+        debug(f"[{self.owner.name}] Initialize complete")
 
     def LoadActiveFilter(self):
         """
@@ -109,41 +149,68 @@ class LandmarkSelectExt:
 
         # Re-validate on every call to protect against live-editing changes.
         if not self._validate_ops():
+            debug(f"ERROR [{self.owner.name}]  LoadActiveFilter failed validation")
             return
 
         if self._loading:
+            debug(f"Info [{self.owner.name}]  LoadActiveFilter already loading")
             return
+        
         self._loading = True
         try:
             self._load_filter_internal()
         finally:
             self._loading = False
+        debug(f"[{self.owner.name}] LoadActiveFilter complete")
 
-    def _set_pass_through_mode(self, reason=""):
-        """Helper to configure the component for pass-through mode."""
+    def _set_pass_through_mode(self, passthrough, reason=""):
+        """
+        Helper to configure the component for pass-through or active filtering.
+
+        Args:
+            passthrough (bool): If True, sets to pass-through. If False, enables filtering.
+            reason (str, optional): A description of why the mode is changing.
+        """
         if not self.is_valid:
+            debug(f"[{self.owner.name}] _set_pass_through_mode not is_valid")   
             return
 
         if reason:
-            debug(f"[{self.owner.name}] {reason}, setting to pass-through.")
+            debug(f"[{self.owner.name}] {reason}")
         
-        if self.switchChop.par.index != 0:
-            self.switchChop.par.index = 0
-        if not self.selectChop.bypass:
-            self.selectChop.bypass = True
-            
-        # Clear the table but keep the header for clarity
-        if self.filter_tableDat.numRows > 1 or self.filter_tableDat.numCols == 0:
-            self.filter_tableDat.clear()
-            self.filter_tableDat.appendRow(['name'])
+        if passthrough:
+            debug(f"[{self.owner.name}] Setting pass-through mode.")
+            if self.switchChop.par.index != 0: self.switchChop.par.index = 0
+            if not self.selectChop.bypass: self.selectChop.bypass = True
+            if self.filter_tableDat.numRows > 1 or self.filter_tableDat.numCols == 0:
+                self.filter_tableDat.clear()
+                self.filter_tableDat.appendRow(['name'])
+        else: # Active filtering mode
+            debug(f"[{self.owner.name}] Setting active filter mode.")
+            if self.selectChop.bypass: self.selectChop.bypass = False
+            if self.switchChop.par.index != 1: self.switchChop.par.index = 1
 
     def _load_filter_internal(self):
         """Internal implementation of LoadActiveFilter to be wrapped by a guard."""
         if not self.is_valid:
-            return
+            debug(f"[{self.owner.name}] LoadActiveFilter not is_valid")
+            return 0
 
-        # --- 2. Get current filter name from the menu parameter ---
-        filter_name = (self.filter_par.eval() or '').strip().lower()
+        # --- 1. Debug menu contents as requested ---
+        debug(f"Filter Menu Parameter '{self.filtermenu_par.name}' contents:")
+        debug(f"  - Menu Names: {self.filtermenu_par.menuNames}")
+        debug(f"  - Menu Labels: {self.filtermenu_par.menuLabels}")
+        debug(f"  - Current Value: {self.filtermenu_par.eval()}")
+
+        # --- 2. Determine the active filter name, using 'Defaultfilter' as an override ---
+        default_filter_override = (self.defaultfilter_par.eval() or '').strip().lower()
+        
+        if default_filter_override and default_filter_override != 'all':
+            filter_name = default_filter_override
+            debug(f"Using override filter from 'Defaultfilter' parameter: '{filter_name}'")
+        else:
+            filter_name = (self.filtermenu_par.eval() or '').strip().lower()
+            debug(f"Using filter from 'Landmarkfiltermenu' parameter: '{filter_name}'")
 
         # Update the read-only Currentfilter parameter for display
         if self.current_filter_par.eval() != filter_name:
@@ -151,22 +218,23 @@ class LandmarkSelectExt:
 
         # --- 3. Handle pass-through case for 'all' or empty filter ---
         if not filter_name or filter_name == 'all':
-            self._set_pass_through_mode(f"Filter is '{filter_name}'")
-            return
-        
+            self._set_pass_through_mode(True, reason=f"Filter is '{filter_name}'")
+            debug(f"[{self.owner.name}] load filter is ALL, should set passthru")
+            return 1
+
         # --- 4. Look up CSV filename in the menu DAT ---
         csv_filename = self._find_csv_for_filter(filter_name, self.menu_dat)
 
         if not csv_filename:
-            self._set_pass_through_mode(f"Filter key '{filter_name}' not found in {self.menu_dat.path}")
-            return
+            self._set_pass_through_mode(True, reason=f"Filter key '{filter_name}' not found in {self.menu_dat.path}")
+            return 1
 
         # --- 5. Read the landmark names from the specified CSV ---
         landmark_names = self._read_landmarks_from_csv(csv_filename)
 
         if landmark_names is None: # Indicates an error during file read
-            self._set_pass_through_mode(f"Failed to read landmarks from '{csv_filename}'")
-            return
+            self._set_pass_through_mode(True, reason=f"Failed to read landmarks from '{csv_filename}'")
+            return 1
 
         # --- 6. Populate the local 'landmark_filter' Table DAT ---
         # note the DAT is just for reference. The Select CHOP uses patterns.
@@ -191,60 +259,78 @@ class LandmarkSelectExt:
             self.selectChop.par.channames = pattern
 
         # --- 8. Activate the filter path in the CHOP network ---
-        if self.selectChop.bypass:
-            self.selectChop.bypass = False
-        if self.switchChop.par.index != 1:
-            self.switchChop.par.index = 1
-
+        self._set_pass_through_mode(False, reason=f"Loaded filter '{filter_name}'")
         debug(f"[{self.owner.name}] Loaded filter '{filter_name}' with {len(landmark_names)} landmarks.")
 
     def RebuildMenu(self):
         """
-        Rebuilds the landmark filter menu from the source CSV file.
-        Reads the path from the 'Customfiltercsv' parameter, loads the CSV,
-        and populates the menu source DAT ('LandmarkFilterMenu_csv').
+        Rebuilds the landmark filter menu from a fixed source CSV file.
+        It loads 'data/landmarkFilterMenu.csv', populates the menu source DAT,
+        and checks for a 'custom' entry to update the 'Customfiltercsv' parameter.
         """
-        # Re-validate on every call to protect against live-editing changes.
-        if not self._validate_ops():
-            return
-
-        if not self.is_valid:
-            return
-
         debug(f"[{self.owner.name}] RebuildMenu called")
 
-        csv_path = self.csv_path_par.eval()
-        if not csv_path:
-            debug(f"WARNING: 'Customfiltercsv' parameter is empty. Cannot rebuild menu.")
-            self.menu_dat.clear()
-            self.menu_dat.appendRow(['key', 'label', 'csv'])
-            return
+        # Re-validate on every call to protect against live-editing changes.
+        if not self._validate_ops():
+            debug(f"[{self.owner.name}] RebuildMenu validate failed")
+            return 0
 
-        if not os.path.isabs(csv_path):
-            csv_path = os.path.normpath(os.path.join(project.folder, csv_path))
+        # The path is now fixed to 'data/landmarkFilterMenu.csv'.
+        manifest_filename = 'data/landmarkFilterMenu.csv'
+        csv_path = os.path.normpath(os.path.join(project.folder, manifest_filename))
+
+        # Clear the menu DAT to ensure a clean state, but add a header for clarity on failure.
+        self.menu_dat.clear()
+        self.menu_dat.appendRow(['key', 'label', 'csv'])
 
         if not os.path.isfile(csv_path):
             debug(f"ERROR: Menu manifest CSV not found: {csv_path}")
-            self.menu_dat.clear()
-            self.menu_dat.appendRow(['key', 'label', 'csv'])
-            return
+            return 0
 
         try:
             with open(csv_path, 'r', newline='', encoding='utf-8') as f:
                 reader = csv.reader(f)
+                # Clear the DAT again to remove the placeholder header before populating.
                 self.menu_dat.clear()
                 for row in reader:
                     self.menu_dat.appendRow(row)
             debug(f"[{self.owner.name}] Rebuilt menu from {csv_path} with {self.menu_dat.numRows} entries.")
+
+            # After loading, check for a 'custom' entry and update the parameter.
+            self._update_custom_csv_par_from_menu()
+
         except Exception as e:
             debug(f"ERROR: Failed to read or parse menu manifest CSV {csv_path}: {e}")
-            # Clear the menu to avoid using stale data
+            # Ensure menu is in a safe, empty state with a header.
             self.menu_dat.clear()
             self.menu_dat.appendRow(['key', 'label', 'csv'])
-            return
+            return 0
 
         # After rebuilding, reload the current filter to ensure consistency.
-        self.LoadActiveFilter()
+        v = self.LoadActiveFilter()
+        return 1
+
+    def _update_custom_csv_par_from_menu(self):
+        """
+        Scans the menu DAT for a 'custom' entry and updates the Customfiltercsv
+        parameter with the path specified in that entry's 'csv' column.
+        """
+        if not self.is_valid:
+            return
+
+        for i in range(self.menu_dat.numRows):
+            key_cell = self.menu_dat[i, 0]
+            # Check for 'custom' key in the first column
+            if key_cell and key_cell.val.strip().lower() == 'custom':
+                # Check for a non-empty path in the third column
+                csv_cell = self.menu_dat[i, 2]
+                if csv_cell and csv_cell.val.strip():
+                    custom_path = csv_cell.val.strip()
+                    # Update the parameter only if the value has changed
+                    if self.customfiltercsv_par.eval() != custom_path:
+                        self.customfiltercsv_par.val = custom_path
+                        debug(f"Updated 'Customfiltercsv' parameter to: {custom_path}")
+                return # Found the custom row, no need to continue
 
     def _find_csv_for_filter(self, filter_name, menu_dat):
         """Looks up a filter key in the menu DAT and returns the csv filename."""

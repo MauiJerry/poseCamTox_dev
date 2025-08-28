@@ -10,7 +10,9 @@ def onStart(info):
     """
     Called by TouchDesigner when the component starts.
     Tells the extension to run its initialization logic.
+    does not seem to be called
     """
+    debug("LandmarkSelect_parexec onStart called")
     # 'parent()' is the component this DAT is inside of.
     try:
         parent().ext.LandmarkSelectExt.Initialize()
@@ -22,6 +24,7 @@ def onValueChange(par, prev):
     """
     Called by TouchDesigner when a parameter on the owner component changes.
     """
+    debug(f"LandmarkSelect_parexec onValueChange called for {par.name}")
     if par.name == 'Landmarkfiltermenu':
         newFilterKey = par.eval()
         parent().par.Currentfilter.val= newFilterKey
@@ -38,6 +41,7 @@ def onPulse(par):
     """
     Called by TouchDesigner when a pulse parameter is activated.
     """
+    debug(f"LandmarkSelect_parexec onPulse called for {par.name}")
     # We only care about the 'RebuildMenu' pulse parameter.
     if par.name == 'RebuildMenu':
         try:

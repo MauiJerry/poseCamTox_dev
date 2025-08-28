@@ -6,6 +6,20 @@ class PoseEffectMasterExt:
     def __init__(self, owner):
         self.owner = owner
         debug(f"PoseEffectMasterExt __init__ called for {owner.name}" ) 
+        self.Initialize()
+
+    def onExtensionReady(self):
+        """
+        This method is called by TouchDesigner when the extension is ready.
+        """
+        debug(f"[{self.owner.name}] Landmark electExt.py onExtensionReady complete")
+        self.Initialize()
+        debug("LandmarkSelect Extension now ready")
+
+    def Initialize(self):
+        debug(f"PoseEffectMasterExt Initialize called for {self.owner.name}" )
+        self.OnStart()
+        return
 
     def SetActive(self, active: bool):
         """Called by PoseEfxSwitch when this effect becomes (in)active."""
@@ -29,21 +43,23 @@ class PoseEffectMasterExt:
     def ApplyFilter(self):
         """Ask the child landmarkSelect to rebuild its Select CHOP pattern."""
         debug("PoseEffect Ext ApplyFilter called" )
-        #ls = self.owner.op('landmarkSelect')
-        landmarkSelectOp = self.op('landmarkSelect')
+        #ls = self.owner.op('landmarkselect')
+        landmarkSelectOp = self.owner.op('landmarkSelect')
         if landmarkSelectOp and hasattr(landmarkSelectOp.ext, 'LandmarkSelectExt'):
             debug("PoseEffectMasterExt tell my landmarkSelect to Rebuild()")
             landmarkSelectOp.ext.LandmarkSelectExt.Rebuild()
         else:
-            debug(f"{op('.').name} LandmarkSelect not found or missing ext: {landmarkSelectOp}")
+            debug(f"ERROR LandmarkSelect not found or missing ext: {landmarkSelectOp}")
 
     def OnStart(self):
-        debug(f"PoseEffectMasterExt OnStart  called {self.owner.name}, wtf we supposed to do here?" )
+        debug(f"PoseEffectMasterExt OnStart()  called {self.owner.name}, init landmarkselect" )
         # do things when the clone starts.
         # insure the landmarkSelect component is setup
-        landmarkSelectOp = self.op('landmarkSelect')
+        landmarkSelectOp = self.owner.op('landmarkselect')
         if landmarkSelectOp and hasattr(landmarkSelectOp.ext, 'LandmarkSelectExt'):
-            landmarkSelectOp.ext.LandmarkSelectExt.Setup()
+            debug("onStart, call landmarSelectExt.Initialize")
+            landmarkSelectOp.ext.LandmarkSelectExt.Initialize()
+            debug("onStart, returned landmarSelectExt.Initialize")
         else:
-            debug(f"{op('.').name} LandmarkSelect not found or missing ext: {landmarkSelectOp}")  
+            debug(f"ERROR LandmarkSelect not found or missing ext")  
             

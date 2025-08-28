@@ -223,3 +223,15 @@ we fix that later.
 
 4p 27 aug
 made bunch of changes for landmark filter. check in to git then rerun and see if it works
+
+trying to figure out where the landmarkSelect (should) get initialized
+and populate the Menu and other parameters
+The derivative docs on Extensions https://docs.derivative.ca/index.php?title=Extensions
+talk about 
+
+from TDStoreTools import StorageManager
+import TDFunctions as TDF
+
+i modified the data/landmarkFilterMenu.csv so we can see if it loads
+it seems to load 7 items, however the parameter editor does not show the menu and even when we force the use of the default value, the select does not seem to do anything (or the switch doesnt switch)
+ending for tonight  27 Aug 10pm
