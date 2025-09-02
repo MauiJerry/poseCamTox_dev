@@ -243,3 +243,53 @@ and it works, with forced Default filter.
 menu still not correct, or i havent tested it
 
 now back to how to get points to match up with incoming points
+
+noting the mask_ for landmarks can contain wild cards
+eg hip* eye* gets both _l and _r
+
+it might also get _x _y if those were included
+
+currently it looks like Y is scaled too big for overlay.
+the deviation gets worse further from center. ... which fits right if scaling is in uv space
+
+---
+8/28 8pm
+Putting Dots aside to implement Texture Map Monster Me 
+
+Chat/gemini are ok. THey have surprising context for TouchDeisgner code and architecture.  But BEWARE.  They muck up on terminology, like what the Parameters are on some particular OP, or what the python API really looks like. 
+I've hd to give it url of derivative reference material
+
+DEBUG - oh what a fkn mess -  there are soooo many ways to do debug logging
+The Python Logging System is impressive
+TD built in debug() is much more like a slightly fancy print()
+and unfortunately is not defined as a global to VSCode (yet)
+
+I need to dial back the SWEngr and Architectural Vision and get the prototypes implemented.  We have enough basic laid down but need to focus more on how TD works with Extensions, Data, Etc.
+And there is that Mediapipe OP to dig into.
+It appears to be similar to the NVidia one in that both setup a local webserver and feed it images and get back pose data etc.
+with lots of controls.
+someday need to do a competitive analysis
+
+BUT .. back to prototyping
+A while back I talked with Chat about the MonsterMe texture map avatar. Somewhere that is tucked away as a .md or .odt
+Go find it and read.  then return here to update
+---
+31 Aug
+Exploring how to textureMap.
+
+looked at variety of things with Chat.  Saved in docs folder.
+incl using AI MediaPipe Image Segmentation to create polys of recognized things.  MediaPipe Plugin shows these.  Andrew briefly mentions
+
+Got a couple Mutant and other Texture Atlas
+
+---
+9/2 11:45a
+went left for a bit. looking for how to build a texture atlas and finding TPose artwork.
+Built Python AtlasMaker tools C:\Users\isdal\Desktop\jerryProjects\Pose2Art\gits\atlasMaker
+with help from ChatGPT... or maybe hinderance as it mucked things up, or maybe that was gemini and chat at cross purposes
+Anyway it sorta converts and makes atlas png/csv.  
+
+but enough of that, need a rendering using POP
+
+So Chat and I gone down the road to build "Pop **Stick-Bones COMP** "
+stickman out of POP tubes and simple texture.

@@ -1,0 +1,15 @@
+type,name,a,b,c,d,tile,thick
+quad,torso,shoulder_l,shoulder_r,hip_r,hip_l,torso,0.55
+quad,head,nose,ear_l,ear_r,nose,head,0.9
+quad,uarm_l,shoulder_l,elbow_l,-,-,uarm_l,0.3
+quad,farm_l,elbow_l,wrist_l,-,-,farm_l,0.26
+quad,uarm_r,shoulder_r,elbow_r,-,-,uarm_r,0.3
+quad,farm_r,elbow_r,wrist_r,-,-,farm_r,0.26
+quad,thigh_l,hip_l,knee_l,-,-,thigh_l,0.4
+quad,calf_l,knee_l,foot_l,-,-,calf_l,0.34
+quad,thigh_r,hip_r,knee_r,-,-,thigh_r,0.4
+quad,calf_r,knee_r,foot_r,-,-,calf_r,0.34
+line,arm_l,shoulder_l,elbow_l,wrist_l,-,-,-
+line,arm_r,shoulder_r,elbow_r,wrist_r,-,-,-
+line,leg_l,hip_l,knee_l,foot_l,-,-,-
+line,leg_r,hip_r,knee_r,foot_r,-,-,-

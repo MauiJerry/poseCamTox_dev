@@ -38,40 +38,47 @@ Produce centered, aspect-corrected X and flipped/centered Y for MediaPipe UVs (0
 
 ### B) Landmark UVs → flipped/centered/asp-corrected CHOPs
 
-**Assumes** your UV CHOP has channels `tx` and `ty` in 0–1 top-left space (from MediaPipe).
+**Assumes** your UV CHOP has channels `tx` and `ty` in 0–1 top-left space (from MediaPipe).You’re right—my bad on page names. In **Math CHOP** the controls you need are on the **OP**, **Range**, and **Common** pages (not “Combine” / “Channel” pages). Here’s the corrected, Math-only layout with exact params.
+
+### A) Get `aspect` from `inMeta` (DAT → CHOP)
+
+1. **Select DAT** `select_aspect`
+   - *Select Rows by Values*: `aspect`
+   - *Select Columns by Name*: `value` ([Derivative](https://docs.derivative.ca/Select_DAT?utm_source=chatgpt.com))
+2. **DAT to CHOP** `aspect_chop`
+   - *Channel per Column*: **On**
+   - *First Row is Names*: **Off** ([Derivative](https://derivative.ca/UserGuide/DAT_to_CHOP?utm_source=chatgpt.com))
+3. **Rename CHOP** `aspect` (optional)
+   - `chan1 → aspect`
+
+### B) UVs → flip Y, center, scale X by aspect (keep `tz`)
+
+Assume your input CHOP has `tx ty tz`.
 
 1. **Math CHOP** `flipY`
-   - **Input**: your UV CHOP (`tx`, `ty`)
-   - *Scope*: `ty`
-   - *From Range*: `0 → 1`
-   - *To Range*: `1 → 0`
-      → Result: `ty = 1 - ty` (origin moved toward bottom-left, still 0–1).
+   - **Common** page → *Scope*: `ty`
+   - **Range** page → *From Range*: `0 → 1`, *To Range*: `1 → 0` (does `ty = 1 - ty`)
+   - (Nothing else set)
+      *(Scope on Common limits which channels are affected.)* ([Derivative](https://docs.derivative.ca/Math_CHOP))
 2. **Constant CHOP** `center_offsets`
-   - Channels:
-     - `tx = -0.5`
-     - `ty = -0.5`
+   - Channels: `tx=-0.5`, `ty=-0.5`, `tz=0`  *(`tz`=0 ensures passthrough)*
 3. **Math CHOP** `center_stream`
    - **Inputs**: Left = `flipY`, Right = `center_offsets`
-   - *Combine Channels*: **Add**
-   - *Scope*: `tx ty`
-      → Result:
-     - `tx = tx - 0.5`
-     - `ty = (1 - ty) - 0.5` (i.e., `0.5 - ty_original`)
-        → Coordinates now in **−0.5..+0.5** centered, bottom-left origin.
+   - **OP** page →
+     - *Combine CHOPs*: **Add**
+     - *Match by*: **Name**
+     - *Align*: **Shortest**
+   - (No Scope needed here because `tz` exists and adds `+0`.)
+      → Result: `tx = tx - 0.5`, `ty = (1 - ty) - 0.5`, `tz` unchanged. ([Derivative](https://docs.derivative.ca/Math_CHOP))
 4. **Math CHOP** `mul_aspect`
-   - **Inputs**: Left = `center_stream`, Right = `aspect` (from section A)
-   - *Combine Channels*: **Multiply**
-   - *Align*: **Shortest** (so the single-sample `aspect` multiplies all samples)
-   - *Scope*: **`tx` only**
-      → Result:
-     - `tx = (tx - 0.5) * aspect`
-     - `ty = 0.5 - ty_original` (unchanged from step 3)
+   - **Inputs**: Left = `center_stream`, Right = `aspect`
+   - **OP** page → *Combine CHOPs*: **Multiply**, *Match by*: **Name**, *Align*: **Shortest**
+   - **Common** page → *Scope*: `tx` (so only X is scaled)
+      → Result: `tx = (tx - 0.5) * aspect`, `ty` and `tz` unchanged. ([Derivative](https://docs.derivative.ca/Math_CHOP))
 
-**Output of `mul_aspect`**:
+> Reference: Math CHOP supports **Combine CHOPs** (add/multiply between inputs) on the **OP** page and **Scope** on the **Common** page to restrict affected channels. ([Derivative](https://docs.derivative.ca/Math_CHOP), [Derivative](https://derivative.ca/UserGuide/Math_CHOP?utm_source=chatgpt.com))
 
-- `tx`: centered & aspect-corrected X
-- `ty`: flipped & centered Y
-   (Optionally pass `tz` through unchanged if you have it; it doesn’t need any of the above transforms.)
+If `tz` ever disappears, double-check `center_offsets` includes `tz=0` and `center_stream` uses *Match by: Name*.
 
 ------
 

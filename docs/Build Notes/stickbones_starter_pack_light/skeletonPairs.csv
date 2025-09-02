@@ -1,0 +1,12 @@
+bone,start_lm,end_lm,start_r,end_r
+L_UpperArm,left_shoulder,left_elbow,28,22
+L_Forearm,left_elbow,left_wrist,22,18
+R_UpperArm,right_shoulder,right_elbow,28,22
+R_Forearm,right_elbow,right_wrist,22,18
+L_Thigh,left_hip,left_knee,32,26
+L_Shin,left_knee,left_ankle,26,20
+R_Thigh,right_hip,right_knee,32,26
+R_Shin,right_knee,right_ankle,26,20
+Clavicle,left_shoulder,right_shoulder,20,20
+Pelvis,left_hip,right_hip,26,26
+Spine,hips_mid,shoulders_mid,30,30
