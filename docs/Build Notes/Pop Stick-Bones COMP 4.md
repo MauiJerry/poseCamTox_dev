@@ -93,7 +93,7 @@ Yes—since `start_radius` / `end_radius` live as **BoneUnit parameters**, the c
    - **Samples:** single-sample → creates **1 template POP point**
    - **Attributes tab → Add the mappings below:**
 
-   | POP Attribute   | Component | Source channel |
+   | POP Attribute   | Component | Channel Scope  |
    | --------------- | --------- | -------------- |
    | `C` (float3)    | x         | `center_x_px`  |
    |                 | y         | `center_y_px`  |

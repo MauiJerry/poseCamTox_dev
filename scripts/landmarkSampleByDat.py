@@ -120,6 +120,16 @@ def cook(script_op):
     # always 1.0. The original logic is removed.
     final_alpha = 1.0
 
+    # grab some parameters to stuff them into channels
+    r0 = float(owner_comp.par.Startradius)  # or your exact par names
+    r1 = float(owner_comp.par.Endradius)
+    ravg = 0.5*(r0+r1)
+    # scale attributes
+    sx = ravg
+    sy = length_px
+    sz = ravg
+
+
     # --- Output results as CHOP channels ---
     script_op.clear()
     
@@ -135,6 +145,13 @@ def cook(script_op):
         'start_y_px': start_y_px,
         'end_x_px': end_x_px,
         'end_y_px': end_y_px,
+        'cz': 0,
+        'vz': 0,
+        'r0': r0,
+        'r1': r1,
+        'sx': sx,
+        'sy': sy,
+        'sz': sz
     }
 
     for name, value in output_channels.items():
