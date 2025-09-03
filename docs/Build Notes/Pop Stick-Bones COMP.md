@@ -31,6 +31,8 @@ Pelvis,left_hip,right_hip,0.060,0.060,3
 
 ### Top-level COMP: `stickBones`
 
+leaving these off for now. get it working first
+
 **Inputs**
 
 - **CHOP In**: `pose_landmarks_in` (your OSC/MediaPipe stream with channels like `left_shoulder_x`, `left_shoulder_y`, `left_shoulder_z`, …)
@@ -59,6 +61,7 @@ Pelvis,left_hip,right_hip,0.060,0.060,3
 
 - **Out TOP**: the rendered stickman (with alpha)
 - **Out CHOP** (optional): per-bone computed transforms & radii for downstream logic (`bone_name/tx,ty,rz,len,start_r,end_r,alpha`)
+- out POP? combined Bones in one Pop Object?
 
 ------
 

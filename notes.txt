@@ -293,3 +293,13 @@ but enough of that, need a rendering using POP
 
 So Chat and I gone down the road to build "Pop **Stick-Bones COMP** "
 stickman out of POP tubes and simple texture.
+
+EURIKA! debug() is defined in the TD TDU Module: https://derivative.ca/UserGuide/Tdu_Module
+import .   if we set VSCode to use python in TD, then it should recognize them.
+This should be per project stuff.
+
+ are the PoseCamPC-MediaPipe landmark names correct? handtip may not be there. Pinky, Index, Thumb fingers are.
+ Could possibly box hand texture using those?
+ 
+ 
+
