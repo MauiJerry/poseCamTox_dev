@@ -1,4 +1,6 @@
 bone, start_landmark, end_landmark, start_radius, end_radius
+Head, eye_l, eye_r, 10, 10
+Neck, nose, shoulder_mid, 10, 10
 UpperArm_l,  shoulder_l, elbow_l, 28,22
 Forearm_l,  elbow_l, wrist_l, 22,18
 UpperArm_r,  shoulder_r, elbow_r, 28,22

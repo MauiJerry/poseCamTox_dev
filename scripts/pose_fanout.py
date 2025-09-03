@@ -19,7 +19,11 @@ Recognized incoming OSC messages:
     /pose/p{pid}/{lid}      <float x> <float y> <float z>
     /pose/p{pid}/{name}
     /p{pid}/{lid|name}      (short form accepted)
-
+Not recognized messages
+    PoseCamPC sends the channel id-name matching every N frames (1sec?)
+    but we don't currently use this information.
+    relying instead on the data/landmark_names.csv file
+    
 Outputs (CHOP channels):
   - p{pid}_{name}_x, p{pid}_{name}_y, p{pid}_{name}_z
   - p{pid}_present

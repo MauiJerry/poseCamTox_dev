@@ -301,5 +301,19 @@ This should be per project stuff.
  are the PoseCamPC-MediaPipe landmark names correct? handtip may not be there. Pinky, Index, Thumb fingers are.
  Could possibly box hand texture using those?
  
- 
+Updated those in PoseCamPC, it now saves the mp (or other) detector id-name mapping in a csv.  I was wrong in a couplee. I have updated the landmark names csv in PoseCamTox data folder to have 3 columns with 3rd being the mp names, 2nd is td name
+Note that MP actually provides more than just normalized xy....
 
+Normalized Landmarks (Landmarks)
+x and y:
+These are normalized to a range of 0.0 to 1.0 based on the image's width and height, respectively. 
+z:
+This is a depth value where the midpoint of the hips serves as the origin. A smaller z value indicates the landmark is closer to the camera. The magnitude of z is on a similar scale to x. 
+visibility:
+A value representing the likelihood of the landmark being visible in the image. 
+presence:
+The likelihood that the landmark is present in the image. 
+
+it also can provide a world coordinate estimation.
+We dont test visibility or presence (difference??) before using them in our chain.  What if they are not visible?
+Edge condition for later.
